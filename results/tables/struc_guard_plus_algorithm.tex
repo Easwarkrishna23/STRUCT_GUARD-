@@ -1,0 +1,53 @@
+\begin{algorithm}[H]
+\caption{STRUC-GUARD+ with Ontology-Driven Self-Healing}
+\label{alg:struc-guard-plus}
+\begin{algorithmic}[1]
+\Require GNN model $f=(MSG,AGG,UPD)$; attacked graph $G'=(V,E',X)$; normalized adjacency $A'$; defense thresholds $\tau_c,\tau_J,\tau_d$; memory coefficient $\beta$
+\Ensure Defended graph $G^*=(V,E^*,X^*)$ and robust parameters $\Theta^*$
+\State Initialize $h_u^0=x_u$ for every node $u\in V$
+\State Initialize edge memory $\omega_{uv}^0=1$ for every edge $(u,v)\in E'$
+\State Build topic sets $T_u$ from nonzero binary features or top-$k$ absolute z-score features
+\For{each edge $(u,v)\in E'$}
+    \State $s_{uv}\gets \cos(x_u,x_v)$; \quad $J_{uv}\gets |T_u\cap T_v|/|T_u\cup T_v|$
+    \State $B_{uv}\gets$ edge betweenness centrality of $(u,v)$
+    \If{$J_{uv}<\tau_J$ \textbf{or} $(TopicMismatch(u,v)$ \textbf{and} $s_{uv}<\tau_c)$}
+        \State mark $(u,v)$ as \textsc{SuspiciousEdge}
+    \EndIf
+\EndFor
+\For{each edge $(u,v)\in E'$}
+    \If{$(u,v)$ is \textsc{SuspiciousEdge} \textbf{or} $(B_{uv}$ is high \textbf{and} $s_{uv}<\tau_c)$}
+        \State remove $(u,v)$ from $E'$
+    \EndIf
+\EndFor
+\For{each node $u\in V$ with anomalous degree}
+    \For{each incident edge $(u,v)$}
+        \State $\phi_{uv}\gets0.50\cos(x_u,x_v)+0.30J(T_u,T_v)+0.20D(u,v)$
+    \EndFor
+    \State prune lowest-fitness incident edges until $degree(u)$ returns near the power-law mean
+\EndFor
+\State $X_s\gets$ residual feature smoothing over the pruned adjacency
+\For{each node $u\in V$}
+    \State $C_u\gets$ top-$k$ nearest neighbors under cosine similarity of $X_s$
+    \For{each $v\in C_u$}
+        \If{adding $(u,v)$ improves local clustering and preserves sampled average path length}
+            \State add $(u,v)$ to $E^*$
+        \EndIf
+    \EndFor
+\EndFor
+\For{layer $k=1$ to $K$}
+    \For{node $u\in V$}
+        \For{neighbor $v\in N_u^*$}
+            \State $\alpha_{uv}^k\gets\cos(h_u^k,h_v^k)$
+            \State $c_{uv}^k\gets[\alpha_{uv}^k,B_{uv},J(T_u,T_v),\phi_{uv}]$
+            \State $\hat{\alpha}_{uv}^k\gets\sigma(c_{uv}^kW)$
+            \State $\omega_{uv}^k\gets\beta\omega_{uv}^{k-1}+(1-\beta)\hat{\alpha}_{uv}^k$
+            \State $m_{uv}^k\gets MSG'(h_u^k,h_v^k,A_{uv})$
+        \EndFor
+        \State $\hat{m}_u^k\gets AGG'(\{\omega_{uv}^k\odot m_{uv}^k:v\in N_u^*\})$
+        \State $h_u^{k+1}\gets UPD'(h_u^k,\hat{m}_u^k)$
+    \EndFor
+\EndFor
+\State Train $\Theta^*$ on $G^*$ using adversarial feature perturbation and edge drop/add augmentation selected by validation accuracy
+\State \Return $G^*,\Theta^*$
+\end{algorithmic}
+\end{algorithm}
