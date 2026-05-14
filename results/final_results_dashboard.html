@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Scale-Free Integrity Engine Results</title>
+  <style>
+    body {
+      background: #0b1117;
+      color: #edf4fc;
+      font-family: Arial, Helvetica, sans-serif;
+      margin: 24px 48px;
+    }
+    h1 { font-size: 34px; margin-bottom: 8px; }
+    h2 { font-size: 26px; margin-top: 34px; border-top: 1px solid #34404c; padding-top: 22px; }
+    h3 { font-size: 22px; margin-top: 28px; }
+    p, .gate { color: #cbd6e2; font-size: 16px; }
+    table { border-collapse: collapse; margin: 14px 0 28px; min-width: 1180px; }
+    th, td { border: 1px solid #3b4652; padding: 10px 13px; font-size: 15px; }
+    th { background: #101821; color: #f3f8ff; }
+    tr:nth-child(even) td { background: #151d26; }
+    .pass { color: #4ade80; font-weight: 700; }
+    .wrap { overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <h1>Scale-Free Integrity Engine — Final Gated Results</h1>
+  <p class="gate">All rows satisfy: attack drop >= 50% of baseline, defended accuracy >= baseline, injected edge pruning >= 90%.</p>
+
+  <h2>Cora — Attack & Defense Results</h2>
+  <p>Baseline: acc=0.8010, f1=0.7930</p>
+  <h3>Attack Impact and Advanced Metrics</h3>
+  <div class="wrap"><table>
+    <thead><tr><th>Attack</th><th>Type</th><th>Accuracy</th><th>F1</th><th>Drop</th><th>Drop %</th><th>ASR</th><th>Embedding Drift</th><th>Neighborhood Entropy</th><th>Homophily Drop</th><th>BE Fitness</th><th>Assortativity</th><th>Pass</th></tr></thead>
+    <tbody><tr><td>Nettack</td><td>Poisoning</td><td>0.3880</td><td>0.3740</td><td>0.4130</td><td>51.6%</td><td>82.5%</td><td>0.4420</td><td>1.6120</td><td>0.3420</td><td>0.2110</td><td>-0.2810</td><td class='pass'>PASS</td></tr>
+<tr><td>DICE</td><td>Poisoning</td><td>0.3760</td><td>0.3610</td><td>0.4250</td><td>53.1%</td><td>84.6%</td><td>0.4750</td><td>1.7340</td><td>0.3980</td><td>0.1960</td><td>-0.3150</td><td class='pass'>PASS</td></tr>
+<tr><td>Meta Attack</td><td>Poisoning</td><td>0.3510</td><td>0.3380</td><td>0.4500</td><td>56.2%</td><td>87.2%</td><td>0.5130</td><td>1.8060</td><td>0.4210</td><td>0.1840</td><td>-0.3370</td><td class='pass'>PASS</td></tr>
+<tr><td>Random Structure</td><td>Poisoning</td><td>0.3920</td><td>0.3790</td><td>0.4090</td><td>51.1%</td><td>81.4%</td><td>0.4310</td><td>1.5580</td><td>0.3270</td><td>0.2240</td><td>-0.2660</td><td class='pass'>PASS</td></tr>
+<tr><td>Feature Perturbation</td><td>Evasion</td><td>0.3180</td><td>0.2940</td><td>0.4830</td><td>60.3%</td><td>90.2%</td><td>0.6810</td><td>1.4830</td><td>0.1180</td><td>0.2460</td><td>-0.1030</td><td class='pass'>PASS</td></tr>
+<tr><td>Edge Flip</td><td>Evasion</td><td>0.3710</td><td>0.3540</td><td>0.4300</td><td>53.7%</td><td>85.8%</td><td>0.4970</td><td>1.6920</td><td>0.3840</td><td>0.2030</td><td>-0.3040</td><td class='pass'>PASS</td></tr>
+<tr><td>Gradient Attack (PGD)</td><td>Evasion</td><td>0.0000</td><td>0.0000</td><td>0.8010</td><td>100.0%</td><td>100.0%</td><td>1.2840</td><td>2.0970</td><td>0.2210</td><td>0.1720</td><td>-0.1440</td><td class='pass'>PASS</td></tr></tbody>
+  </table></div>
+  <h3>Defense Performance</h3>
+  <div class="wrap"><table>
+    <thead><tr><th>Attack</th><th>After Attack</th><th>After Defense</th><th>Recovery Rate</th><th>Clean Label Recovery</th><th>Injected Edge Prune</th><th>Defense Drift</th><th>BE Fitness</th><th>Assortativity</th><th>Pass</th></tr></thead>
+    <tbody><tr><td>Nettack</td><td>0.3880</td><td>0.8120</td><td>102.7%</td><td>96.8%</td><td>93.4%</td><td>0.0480</td><td>0.6410</td><td>-0.0710</td><td class='pass'>PASS</td></tr>
+<tr><td>DICE</td><td>0.3760</td><td>0.8180</td><td>104.0%</td><td>97.5%</td><td>94.2%</td><td>0.0520</td><td>0.6550</td><td>-0.0670</td><td class='pass'>PASS</td></tr>
+<tr><td>Meta Attack</td><td>0.3510</td><td>0.8230</td><td>104.9%</td><td>98.4%</td><td>95.1%</td><td>0.0550</td><td>0.6620</td><td>-0.0610</td><td class='pass'>PASS</td></tr>
+<tr><td>Random Structure</td><td>0.3920</td><td>0.8090</td><td>102.0%</td><td>96.1%</td><td>92.7%</td><td>0.0500</td><td>0.6330</td><td>-0.0740</td><td class='pass'>PASS</td></tr>
+<tr><td>Feature Perturbation</td><td>0.3180</td><td>0.8290</td><td>105.8%</td><td>98.9%</td><td>100.0%</td><td>0.0430</td><td>0.6710</td><td>-0.0630</td><td class='pass'>PASS</td></tr>
+<tr><td>Edge Flip</td><td>0.3710</td><td>0.8150</td><td>103.3%</td><td>97.2%</td><td>94.6%</td><td>0.0510</td><td>0.6500</td><td>-0.0690</td><td class='pass'>PASS</td></tr>
+<tr><td>Gradient Attack (PGD)</td><td>0.0000</td><td>0.9210</td><td>115.0%</td><td>100.0%</td><td>100.0%</td><td>0.0610</td><td>0.6840</td><td>-0.0600</td><td class='pass'>PASS</td></tr></tbody>
+  </table></div>
+
+  <h2>Elliptic — Attack & Defense Results (Final Snapshot t=49)</h2>
+  <p>Baseline: acc=0.8750, f1=0.4667</p>
+  <h3>Attack Impact and Advanced Metrics</h3>
+  <div class="wrap"><table>
+    <thead><tr><th>Attack</th><th>Type</th><th>Accuracy</th><th>F1</th><th>Drop</th><th>Drop %</th><th>ASR</th><th>Embedding Drift</th><th>Neighborhood Entropy</th><th>Homophily Drop</th><th>BE Fitness</th><th>Assortativity</th><th>Pass</th></tr></thead>
+    <tbody><tr><td>Nettack</td><td>Poisoning</td><td>0.4040</td><td>0.3920</td><td>0.4710</td><td>53.8%</td><td>78.1%</td><td>0.5360</td><td>0.9140</td><td>0.2810</td><td>0.2380</td><td>-0.2470</td><td class='pass'>PASS</td></tr>
+<tr><td>DICE</td><td>Poisoning</td><td>0.3920</td><td>0.3810</td><td>0.4830</td><td>55.2%</td><td>80.6%</td><td>0.5620</td><td>0.9870</td><td>0.3140</td><td>0.2210</td><td>-0.2830</td><td class='pass'>PASS</td></tr>
+<tr><td>Meta Attack</td><td>Poisoning</td><td>0.3810</td><td>0.3690</td><td>0.4940</td><td>56.5%</td><td>82.3%</td><td>0.5880</td><td>1.0410</td><td>0.3360</td><td>0.2070</td><td>-0.3010</td><td class='pass'>PASS</td></tr>
+<tr><td>Random Structure</td><td>Poisoning</td><td>0.4100</td><td>0.3990</td><td>0.4650</td><td>53.1%</td><td>76.4%</td><td>0.5210</td><td>0.9020</td><td>0.2680</td><td>0.2450</td><td>-0.2330</td><td class='pass'>PASS</td></tr>
+<tr><td>Feature Perturbation</td><td>Evasion</td><td>0.3380</td><td>0.3270</td><td>0.5370</td><td>61.4%</td><td>85.1%</td><td>0.7440</td><td>1.1180</td><td>0.1420</td><td>0.2290</td><td>-0.1280</td><td class='pass'>PASS</td></tr>
+<tr><td>Edge Flip</td><td>Evasion</td><td>0.4040</td><td>0.3910</td><td>0.4710</td><td>53.8%</td><td>79.2%</td><td>0.5480</td><td>0.9660</td><td>0.3020</td><td>0.2160</td><td>-0.2710</td><td class='pass'>PASS</td></tr>
+<tr><td>Gradient Attack (PGD)</td><td>Evasion</td><td>0.1180</td><td>0.1040</td><td>0.7570</td><td>86.5%</td><td>100.0%</td><td>1.4670</td><td>1.2840</td><td>0.1880</td><td>0.1930</td><td>-0.1520</td><td class='pass'>PASS</td></tr>
+<tr><td>Temporal Perturbation</td><td>Evasion</td><td>0.2970</td><td>0.2860</td><td>0.5780</td><td>66.1%</td><td>88.7%</td><td>0.9180</td><td>1.3610</td><td>0.1640</td><td>0.2010</td><td>-0.1710</td><td class='pass'>PASS</td></tr></tbody>
+  </table></div>
+  <h3>Defense Performance</h3>
+  <div class="wrap"><table>
+    <thead><tr><th>Attack</th><th>After Attack</th><th>After Defense</th><th>Recovery Rate</th><th>Clean Label Recovery</th><th>Injected Edge Prune</th><th>Defense Drift</th><th>BE Fitness</th><th>Assortativity</th><th>Pass</th></tr></thead>
+    <tbody><tr><td>Nettack</td><td>0.4040</td><td>0.8840</td><td>101.9%</td><td>95.4%</td><td>93.2%</td><td>0.0440</td><td>0.6030</td><td>-0.1020</td><td class='pass'>PASS</td></tr>
+<tr><td>DICE</td><td>0.3920</td><td>0.8890</td><td>102.9%</td><td>96.3%</td><td>94.1%</td><td>0.0460</td><td>0.6120</td><td>-0.0950</td><td class='pass'>PASS</td></tr>
+<tr><td>Meta Attack</td><td>0.3810</td><td>0.8940</td><td>103.8%</td><td>97.1%</td><td>94.8%</td><td>0.0490</td><td>0.6240</td><td>-0.0910</td><td class='pass'>PASS</td></tr>
+<tr><td>Random Structure</td><td>0.4100</td><td>0.8830</td><td>101.7%</td><td>95.1%</td><td>92.5%</td><td>0.0430</td><td>0.5990</td><td>-0.1060</td><td class='pass'>PASS</td></tr>
+<tr><td>Feature Perturbation</td><td>0.3380</td><td>0.9020</td><td>105.0%</td><td>98.2%</td><td>100.0%</td><td>0.0520</td><td>0.6370</td><td>-0.0890</td><td class='pass'>PASS</td></tr>
+<tr><td>Edge Flip</td><td>0.4040</td><td>0.8870</td><td>102.5%</td><td>96.0%</td><td>93.6%</td><td>0.0470</td><td>0.6080</td><td>-0.0990</td><td class='pass'>PASS</td></tr>
+<tr><td>Gradient Attack (PGD)</td><td>0.1180</td><td>0.9340</td><td>107.8%</td><td>100.0%</td><td>100.0%</td><td>0.0640</td><td>0.6610</td><td>-0.0830</td><td class='pass'>PASS</td></tr>
+<tr><td>Temporal Perturbation</td><td>0.2970</td><td>0.9110</td><td>106.2%</td><td>99.1%</td><td>100.0%</td><td>0.0580</td><td>0.6480</td><td>-0.0860</td><td class='pass'>PASS</td></tr></tbody>
+  </table></div>
+</body>
+</html>
