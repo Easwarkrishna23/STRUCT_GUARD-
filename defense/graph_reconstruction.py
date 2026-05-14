@@ -26,12 +26,15 @@ def graph_reconstruction(
     np.fill_diagonal(sim, -np.inf)
 
     G = nx.from_numpy_array(adj)
-    base_apl = _safe_average_path_length(G)
+    base_apl = _sampled_average_path_length(G)
+    base_hier_loss = _hierarchical_clustering_loss(G, cfg)
     accepted = 0
     rejected_clustering = 0
     rejected_path = 0
+    rejected_hierarchy = 0
 
     n = adj.shape[0]
+    path_checked = 0
     for u in range(n):
         candidates = np.argsort(sim[u])[-cfg.knn_k * 3 :][::-1]
         added_for_u = 0
@@ -42,12 +45,18 @@ def graph_reconstruction(
             before = _endpoint_clustering(G, u, v)
             G.add_edge(u, v)
             after = _endpoint_clustering(G, u, v)
-            # Adding an unweighted edge cannot increase shortest-path length;
-            # keep the guard explicit without recomputing all-pairs paths.
-            apl = base_apl
+            hierarchy_loss = _hierarchical_clustering_loss(G, cfg)
+            apl = _sampled_average_path_length(G) if path_checked % 25 == 0 else base_apl
+            path_checked += 1
+            path_reduction = base_apl - apl
             max_apl = base_apl * (1.0 + cfg.small_world_apl_tolerance)
+            hierarchy_ok = (
+                hierarchy_loss <= cfg.hierarchical_slope_tolerance
+                or hierarchy_loss <= base_hier_loss
+            )
+            path_ok = apl <= max_apl and path_reduction <= cfg.path_length_reduction_epsilon
 
-            if after >= before and apl <= max_apl:
+            if after >= before and hierarchy_ok and path_ok:
                 adj[u, v] = 1.0
                 adj[v, u] = 1.0
                 accepted += 1
@@ -56,6 +65,8 @@ def graph_reconstruction(
                 G.remove_edge(u, v)
                 if after < before:
                     rejected_clustering += 1
+                elif not hierarchy_ok:
+                    rejected_hierarchy += 1
                 else:
                     rejected_path += 1
 
@@ -70,9 +81,12 @@ def graph_reconstruction(
         "edges_added_by_knn": edges_after - edges_before,
         "accepted_candidates": accepted,
         "rejected_clustering": rejected_clustering,
+        "rejected_hierarchy": rejected_hierarchy,
         "rejected_path_length": rejected_path,
         "base_average_path_length": base_apl,
-        "final_average_path_length": _safe_average_path_length(G),
+        "final_average_path_length": _sampled_average_path_length(G),
+        "base_hierarchical_clustering_loss": base_hier_loss,
+        "final_hierarchical_clustering_loss": _hierarchical_clustering_loss(G, cfg),
         "knn_k": cfg.knn_k,
     }
     print(f"  [Small-World KNN] edges: {edges_before} -> {edges_after} "
@@ -103,3 +117,50 @@ def _safe_average_path_length(G) -> float:
     if H.number_of_nodes() <= 1:
         return 0.0
     return float(nx.average_shortest_path_length(H))
+
+
+def _sampled_average_path_length(G, samples: int = 64, seed: int = 42) -> float:
+    import networkx as nx
+
+    if G.number_of_nodes() <= 1:
+        return 0.0
+    if nx.is_connected(G):
+        H = G
+    else:
+        largest = max(nx.connected_components(G), key=len)
+        H = G.subgraph(largest).copy()
+    nodes = list(H.nodes())
+    if len(nodes) <= 1:
+        return 0.0
+    rng = np.random.default_rng(seed)
+    src = nodes if len(nodes) <= samples else rng.choice(nodes, size=samples, replace=False)
+    distances = []
+    for node in src:
+        lengths = nx.single_source_shortest_path_length(H, int(node))
+        distances.extend([d for target, d in lengths.items() if target != int(node)])
+    return float(np.mean(distances)) if distances else 0.0
+
+
+def _hierarchical_clustering_loss(G, cfg: DefenseConfig) -> float:
+    """Loss from the scale-free hierarchy target C(k) ~ k^-1."""
+    import networkx as nx
+
+    if G.number_of_edges() == 0:
+        return float("inf")
+    degrees = dict(G.degree())
+    clustering = nx.clustering(G)
+    buckets: dict[int, list[float]] = {}
+    for node, deg in degrees.items():
+        if deg <= 1:
+            continue
+        buckets.setdefault(int(deg), []).append(float(clustering.get(node, 0.0)))
+    xs, ys = [], []
+    for deg, vals in buckets.items():
+        c = float(np.mean(vals))
+        if c > 0.0:
+            xs.append(np.log(float(deg)))
+            ys.append(np.log(c))
+    if len(xs) < 3:
+        return 0.0
+    slope = float(np.polyfit(np.asarray(xs), np.asarray(ys), 1)[0])
+    return abs(slope - cfg.hierarchical_slope_target)

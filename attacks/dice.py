@@ -23,6 +23,7 @@ from typing import Optional
 
 from datasets.cora_loader import GraphData
 from attacks.base import AttackResult, edge_budget, diff_edges
+from utils.graph_utils import compute_cosine_similarity
 
 
 def dice_attack(
@@ -67,15 +68,20 @@ def dice_attack(
           f"({budget_ratio:.0%} of {int(graph.adj.sum())//2}), "
           f"delete={half}, add={half}")
 
-    # ── Step 1: DELETE internal edges (same predicted class) ─────────────────
+    # ── Step 1: DELETE internal bottleneck edges (same predicted class) ──────
     rows, cols = np.where(np.triu(adj, k=1) > 0)
     internal_mask = pred_labels[rows] == pred_labels[cols]
     internal_idx  = np.where(internal_mask)[0]
+    edge_centrality = _edge_betweenness_lookup(adj)
 
     if len(internal_idx) > 0:
         n_delete = min(half, len(internal_idx))
         degree = adj.sum(axis=1)
-        scores = degree[rows[internal_idx]] + degree[cols[internal_idx]]
+        scores = np.array([
+            edge_centrality.get((int(min(rows[idx], cols[idx])), int(max(rows[idx], cols[idx]))), 0.0)
+            for idx in internal_idx
+        ])
+        scores += 0.05 * (degree[rows[internal_idx]] + degree[cols[internal_idx]]) / max(float(degree.max()), 1.0)
         order = internal_idx[np.argsort(-scores)]
         pool = order[: max(n_delete, min(len(order), n_delete * 5))]
         chosen = rng.choice(pool, n_delete, replace=False)
@@ -87,20 +93,23 @@ def dice_attack(
         n_delete = 0
         print("  [DICE] Warning: no internal edges found to delete")
 
-    # ── Step 2: ADD external edges (different predicted class) ───────────────
-    # Sample candidate non-edges between nodes of different classes
+    # ── Step 2: ADD external low-similarity bottleneck edges ─────────────────
+    # Candidate non-edges connect different predicted classes and high-degree
+    # structural bottleneck endpoints, which fragments homophilous aggregation.
     n_added = 0
     attempts = 0
     max_attempts = half * 20
+    degree = adj.sum(axis=1)
+    sim = compute_cosine_similarity(graph.features)
+    hubs = np.argsort(-degree)[: min(n, max(64, int(np.sqrt(n) * 8)))]
 
-    # Build a lookup of external non-edges for efficiency
-    # Sample random pairs and filter
     while n_added < half and attempts < max_attempts:
-        i = rng.integers(0, n)
+        i = int(rng.choice(hubs)) if hubs.size else int(rng.integers(0, n))
         j = rng.integers(0, n)
         if (i != j
                 and adj[i, j] == 0
-                and pred_labels[i] != pred_labels[j]):
+                and pred_labels[i] != pred_labels[j]
+                and sim[i, j] <= np.quantile(sim[i], 0.25)):
             adj[i, j] = 1.0
             adj[j, i] = 1.0
             n_added += 1
@@ -124,5 +133,22 @@ def dice_attack(
         n_edges_removed=removed,
         n_features_perturbed=0,
         budget_used=total_budget,
-        diagnostics={"budget_ratio": budget_ratio, "strategy": "dice_degree_weighted"},
+        diagnostics={
+            "budget_ratio": budget_ratio,
+            "strategy": "dice_structural_bottleneck_betweenness",
+        },
     )
+
+
+def _edge_betweenness_lookup(adj: np.ndarray) -> dict[tuple[int, int], float]:
+    import networkx as nx
+
+    G = nx.from_numpy_array(adj)
+    if G.number_of_edges() == 0:
+        return {}
+    k = min(256, G.number_of_nodes())
+    centrality = nx.edge_betweenness_centrality(G, k=k, seed=42, normalized=True)
+    return {
+        (int(min(u, v)), int(max(u, v))): float(c)
+        for (u, v), c in centrality.items()
+    }

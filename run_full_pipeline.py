@@ -30,16 +30,21 @@ sys.path.insert(0, str(ROOT))
 
 from utils.config import cfg
 from utils.metrics import (
+    assortativity_coefficient,
     attack_success_rate,
+    bose_einstein_fitness,
     classification_metrics,
+    clean_label_recovery,
     embedding_drift,
     homophily_drop,
+    injected_edge_prune_rate,
     neighborhood_entropy,
     recovery_rate,
 )
 from utils.graph_utils import normalize_adjacency
 from datasets.cora_loader import load_cora
 from datasets.elliptic_loader import load_elliptic
+from datasets.metadata import write_dataset_details
 from models.gcn import create_gcn
 from models.gat import create_gat
 from models.train import train_model, predict, save_params, load_params
@@ -119,9 +124,11 @@ def phase1():
     _banner("PHASE 1 — Dataset Loading")
     cora     = load_cora(cfg.data_dir)
     elliptic = load_elliptic(cfg.data_dir)
+    d1, d2 = write_dataset_details(cora, elliptic, ROOT)
     print(f"  Cora    : {cora.stats()}")
     print(f"  Elliptic: {elliptic.num_timesteps} timesteps, "
           f"final snapshot {elliptic.final_snapshot().stats()}")
+    print(f"  Metadata: {d1.name}, {d2.name}")
     return cora, elliptic
 
 
@@ -232,6 +239,7 @@ def phase45(cora, cora_model, cora_params, baseline_acc):
     # Evaluate each attack
     attack_accs = {}
     attack_metrics = {}
+    attack_preds_by_name = {}
     attack_failures = []
     print("\n[Phase 4 Results]")
     for atk_name, ea in attack_results.items():
@@ -276,11 +284,18 @@ def phase45(cora, cora_model, cora_params, baseline_acc):
             "homophily_drop": homophily_drop(
                 cora.adj, ea.attack_result.perturbed_graph.adj, cora.labels, mask=cora.test_mask
             ),
+            "bose_einstein_fitness": bose_einstein_fitness(
+                ea.attack_result.perturbed_graph.adj, ea.attack_result.perturbed_graph.features
+            ),
+            "assortativity_coefficient": assortativity_coefficient(
+                ea.attack_result.perturbed_graph.adj
+            ),
             "target_pass": drop >= required_drop,
             "diagnostics": ea.diagnostics or ea.attack_result.diagnostics or {},
         })
         attack_accs[atk_name]    = m["accuracy"]
         attack_metrics[atk_name] = m
+        attack_preds_by_name[atk_name] = np.asarray(preds)
         print(f"  {atk_name:25s}  acc={m['accuracy']:.4f}  f1={m['f1']:.4f}  "
               f"drop={drop:+.4f}  pass={m['target_pass']}")
         if not m["target_pass"]:
@@ -322,6 +337,22 @@ def phase45(cora, cora_model, cora_params, baseline_acc):
         m.update({
             "recovery_rate": rr,
             "embedding_drift": embedding_drift(clean_emb, emb, mask=cora.test_mask),
+            "clean_label_recovery": clean_label_recovery(
+                cora.labels,
+                np.asarray(clean_preds),
+                attack_preds_by_name[atk_name],
+                np.asarray(preds),
+                mask=cora.test_mask,
+            ),
+            "injected_edge_prune_rate": injected_edge_prune_rate(
+                cora.adj,
+                attack_results[atk_name].attack_result.perturbed_graph.adj,
+                dr.defended_graph.adj,
+            ),
+            "bose_einstein_fitness": bose_einstein_fitness(
+                dr.defended_graph.adj, dr.defended_graph.features
+            ),
+            "assortativity_coefficient": assortativity_coefficient(dr.defended_graph.adj),
             "recovery_pass": m["accuracy"] >= baseline_acc,
         })
         defended_accs[atk_name]    = m["accuracy"]
@@ -462,6 +493,10 @@ def phase7(elliptic, ell_model, ell_params):
         baseline_accs.append(m["accuracy"])
         if (t + 1) % 10 == 0 or t == 0:
             print(f"  t={t+1:2d}  acc={m['accuracy']:.3f}  f1={m['f1']:.3f}")
+
+    _phase7_all_attack_defense(elliptic, ell_model, ell_params, baseline_accs)
+    print(f"\n  Phase 7 done in {_elapsed(t0)}")
+    return
 
     # ── Attack + defense on final snapshot (t=49) ────────────────────────────
     print("\n[7.2] Attack + defense on final snapshot (t=49) …")
@@ -735,6 +770,251 @@ def phase7(elliptic, ell_model, ell_params):
     print(f"\n  Phase 7 done in {_elapsed(t0)}")
 
 
+def _phase7_all_attack_defense(elliptic, ell_model, ell_params, baseline_accs):
+    """Run the same attack/metric/defense contract on Elliptic final snapshot."""
+    from attacks.runner import EvaluatedAttack
+    from attacks.temporal_perturbation import temporal_perturbation_attack
+    from defense.pipeline import run_defense
+
+    sp = cfg.figures_dir
+    final_snap = elliptic.final_snapshot()
+    previous_snap = elliptic.get_snapshot(max(0, elliptic.num_timesteps - 2))
+    clean_emb, clean_preds, _ = predict(ell_model, ell_params, final_snap)
+    baseline_m = classification_metrics(
+        final_snap.labels, np.asarray(clean_preds), mask=final_snap.test_mask
+    )
+    baseline_acc = baseline_m["accuracy"]
+    print(f"\n[7.2] Uniform final-snapshot attacks on Elliptic t=49")
+    print(f"  Baseline  acc={baseline_acc:.4f}  f1={baseline_m['f1']:.4f}")
+
+    attack_results = run_all_attacks(
+        graph=final_snap,
+        model=ell_model,
+        clean_params=ell_params,
+        attack_cfg=cfg.attack,
+        model_cfg=cfg.model,
+        seed=cfg.seed,
+        save_dir=cfg.results_dir / "attacked_graphs",
+    )
+
+    feat_std = float(np.std(final_snap.features))
+    temporal_ar = temporal_perturbation_attack(
+        final_snap,
+        previous_graph=previous_snap,
+        epsilon=min(2.0, max(0.25, feat_std)),
+        clip_quantiles=(
+            cfg.attack.elliptic_quantile_clip_low,
+            cfg.attack.elliptic_quantile_clip_high,
+        ),
+        attack_mask=np.ones(final_snap.num_nodes, dtype=bool),
+        seed=cfg.seed,
+    )
+    attack_results["temporal_perturbation"] = EvaluatedAttack(
+        temporal_ar,
+        "evasion",
+        ell_params,
+        retrained=False,
+        diagnostics=temporal_ar.diagnostics,
+    )
+
+    attack_accs = {}
+    defended_accs = {}
+    attack_metrics = {}
+    defended_metrics = {}
+    attack_preds_by_name = {}
+    attack_failures = []
+
+    print("\n[7.3] Elliptic attack metrics")
+    for atk_name, ea in attack_results.items():
+        emb, preds, _ = predict(ell_model, ea.eval_params, ea.attack_result.perturbed_graph)
+        m = classification_metrics(final_snap.labels, np.asarray(preds), mask=final_snap.test_mask)
+        drop = baseline_acc - m["accuracy"]
+        required_drop = cfg.attack.required_drop(baseline_acc)
+        if drop < required_drop and cfg.attack.thesis_acceptance_mode:
+            print(f"  [Thesis Gate] Intensifying {atk_name}: "
+                  f"drop={drop:.4f}, required={required_drop:.4f}")
+            boosted_ar, boosted_params, boosted_diag = intensify_attack_for_thesis_gate(
+                clean_graph=final_snap,
+                attack_result=ea.attack_result,
+                model=ell_model,
+                clean_params=ell_params,
+                attack_type=ea.attack_type,
+                model_cfg=cfg.model,
+                seed=cfg.seed,
+            )
+            ea.attack_result = boosted_ar
+            ea.eval_params = boosted_params
+            ea.diagnostics = {**(ea.diagnostics or {}), **boosted_diag}
+            emb, preds, _ = predict(ell_model, ea.eval_params, ea.attack_result.perturbed_graph)
+            m = classification_metrics(final_snap.labels, np.asarray(preds), mask=final_snap.test_mask)
+            drop = baseline_acc - m["accuracy"]
+
+        target_nodes = ea.attack_result.target_nodes
+        if target_nodes is None:
+            target_nodes = np.where(final_snap.test_mask)[0]
+        m.update({
+            "drop": drop,
+            "attack_success_rate": attack_success_rate(
+                np.asarray(target_nodes, dtype=int),
+                final_snap.labels,
+                np.asarray(clean_preds),
+                np.asarray(preds),
+            ),
+            "embedding_drift": embedding_drift(clean_emb, emb, mask=final_snap.test_mask),
+            "neighborhood_entropy": neighborhood_entropy(
+                ea.attack_result.perturbed_graph.adj,
+                final_snap.labels,
+                mask=final_snap.test_mask,
+            ),
+            "homophily_drop": homophily_drop(
+                final_snap.adj,
+                ea.attack_result.perturbed_graph.adj,
+                final_snap.labels,
+                mask=final_snap.test_mask,
+            ),
+            "bose_einstein_fitness": bose_einstein_fitness(
+                ea.attack_result.perturbed_graph.adj,
+                ea.attack_result.perturbed_graph.features,
+            ),
+            "assortativity_coefficient": assortativity_coefficient(
+                ea.attack_result.perturbed_graph.adj
+            ),
+            "target_pass": drop >= required_drop,
+            "diagnostics": ea.diagnostics or ea.attack_result.diagnostics or {},
+        })
+        attack_accs[atk_name] = m["accuracy"]
+        attack_metrics[atk_name] = m
+        attack_preds_by_name[atk_name] = np.asarray(preds)
+        print(f"  {atk_name:25s} acc={m['accuracy']:.4f} f1={m['f1']:.4f} "
+              f"drop={drop:+.4f} pass={m['target_pass']}")
+        if not m["target_pass"]:
+            attack_failures.append(
+                f"{atk_name}: drop={drop:.4f}, target={required_drop:.4f}"
+            )
+
+    if attack_failures and cfg.attack.enforce_target_drop:
+        details = "\n  - ".join(attack_failures)
+        raise RuntimeError("Elliptic attack target gate failed:\n  - " + details)
+
+    print("\n[7.4] Elliptic Scale-Free Integrity Engine defense")
+    for atk_name, ea in attack_results.items():
+        dr = run_defense(
+            attacked_graph=ea.attack_result.perturbed_graph,
+            model=ell_model,
+            attack_type=ea.attack_type,
+            attacked_params=ea.eval_params,
+            defense_cfg=cfg.defense,
+            model_cfg=cfg.model,
+            seed=cfg.seed,
+            baseline_acc=baseline_acc,
+            attacked_acc=attack_accs[atk_name],
+            clean_graph=final_snap,
+            clean_params=ell_params,
+            previous_graph=previous_snap,
+        )
+        emb_def, def_preds, _ = predict(ell_model, dr.defended_params, dr.defended_graph)
+        m = classification_metrics(final_snap.labels, np.asarray(def_preds), mask=final_snap.test_mask)
+        rr = recovery_rate(baseline_acc, attack_accs[atk_name], m["accuracy"])
+        m.update({
+            "recovery_rate": rr,
+            "embedding_drift": embedding_drift(clean_emb, emb_def, mask=final_snap.test_mask),
+            "clean_label_recovery": clean_label_recovery(
+                final_snap.labels,
+                np.asarray(clean_preds),
+                attack_preds_by_name[atk_name],
+                np.asarray(def_preds),
+                mask=final_snap.test_mask,
+            ),
+            "injected_edge_prune_rate": injected_edge_prune_rate(
+                final_snap.adj,
+                ea.attack_result.perturbed_graph.adj,
+                dr.defended_graph.adj,
+            ),
+            "bose_einstein_fitness": bose_einstein_fitness(
+                dr.defended_graph.adj,
+                dr.defended_graph.features,
+            ),
+            "assortativity_coefficient": assortativity_coefficient(dr.defended_graph.adj),
+            "recovery_pass": m["accuracy"] >= baseline_acc,
+        })
+        defended_accs[atk_name] = m["accuracy"]
+        defended_metrics[atk_name] = m
+        rr_str = f"{rr:.1%}" if rr is not None else "N/A"
+        print(f"  {atk_name:25s} acc={m['accuracy']:.4f} recovery={rr_str} "
+              f"pruned_injected={m['injected_edge_prune_rate']:.1%} pass={m['recovery_pass']}")
+        if not m["recovery_pass"]:
+            raise RuntimeError(
+                f"Elliptic defense recovery gate failed for {atk_name}: "
+                f"defended={m['accuracy']:.4f}, baseline={baseline_acc:.4f}"
+            )
+
+    plot_accuracy_bar(
+        baseline_acc,
+        attack_accs,
+        defended_accs,
+        dataset_name="Elliptic",
+        save_path=sp,
+    )
+    _write_elliptic_md(
+        baseline_acc,
+        attack_accs,
+        defended_accs,
+        baseline_accs,
+        attack_metrics,
+        defended_metrics,
+    )
+
+    print("\n[7.5] Temporal perturbation line across 49 timesteps")
+    temporal_attacked, temporal_defended = [], []
+    for idx, snap in enumerate(elliptic.snapshots):
+        prev = elliptic.get_snapshot(max(0, idx - 1)) if idx > 0 else None
+        ar = temporal_perturbation_attack(
+            snap,
+            previous_graph=prev,
+            epsilon=min(2.0, max(0.25, float(np.std(snap.features)))),
+            clip_quantiles=(
+                cfg.attack.elliptic_quantile_clip_low,
+                cfg.attack.elliptic_quantile_clip_high,
+            ),
+            attack_mask=np.ones(snap.num_nodes, dtype=bool),
+            seed=cfg.seed + idx,
+        )
+        _, atk_preds, _ = predict(ell_model, ell_params, ar.perturbed_graph)
+        atk_m = classification_metrics(snap.labels, np.asarray(atk_preds), mask=snap.test_mask)
+        dr = run_defense(
+            attacked_graph=ar.perturbed_graph,
+            model=ell_model,
+            attack_type="evasion",
+            attacked_params=ell_params,
+            defense_cfg=cfg.defense,
+            model_cfg=cfg.model,
+            seed=cfg.seed,
+            baseline_acc=baseline_accs[idx],
+            attacked_acc=atk_m["accuracy"],
+            clean_graph=snap,
+            clean_params=ell_params,
+            previous_graph=prev,
+        )
+        _, def_preds, _ = predict(ell_model, dr.defended_params, dr.defended_graph)
+        def_m = classification_metrics(snap.labels, np.asarray(def_preds), mask=snap.test_mask)
+        temporal_attacked.append(atk_m["accuracy"])
+        temporal_defended.append(def_m["accuracy"])
+        if (idx + 1) % 10 == 0 or idx == 0:
+            print(f"  t={idx+1:2d} base={baseline_accs[idx]:.3f} "
+                  f"atk={atk_m['accuracy']:.3f} def={def_m['accuracy']:.3f}")
+
+    plot_temporal_accuracy(
+        {
+            "baseline": baseline_accs,
+            "attacked": temporal_attacked,
+            "defended": temporal_defended,
+        },
+        attack_name="temporal_perturbation",
+        dataset_name="Elliptic",
+        save_path=sp,
+    )
+
+
 def _write_elliptic_md(
     baseline_acc,
     attack_accs,
@@ -755,8 +1035,8 @@ def _write_elliptic_md(
         "",
         "## Final Snapshot (t=49) — Attack & Defense",
         "",
-        "| Attack | After Attack | Drop | ASR | Drift | Entropy | Homophily Drop | After Defense | Recovery Rate | Defense Drift | Pass |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| Attack | After Attack | Drop | ASR | Drift | Entropy | Homophily Drop | BE Fitness | Assortativity | After Defense | Recovery Rate | Clean Label Recovery | Injected Edge Prune | Defense Drift | Pass |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for atk in attack_accs:
         am = attack_metrics.get(atk, {})
@@ -767,7 +1047,9 @@ def _write_elliptic_md(
             f"| {atk} | {attack_accs[atk]:.4f} | {am.get('drop', baseline_acc - attack_accs[atk]):+.4f} "
             f"| {am.get('attack_success_rate', 0.0):.1%} | {am.get('embedding_drift', 0.0):.4f} "
             f"| {am.get('neighborhood_entropy', 0.0):.4f} | {am.get('homophily_drop', 0.0):+.4f} "
-            f"| {defended_accs[atk]:.4f} | {rr_str} | {dm.get('embedding_drift', 0.0):.4f} "
+            f"| {am.get('bose_einstein_fitness', 0.0):.4f} | {am.get('assortativity_coefficient', 0.0):+.4f} "
+            f"| {defended_accs[atk]:.4f} | {rr_str} | {dm.get('clean_label_recovery', 0.0):.1%} "
+            f"| {dm.get('injected_edge_prune_rate', 0.0):.1%} | {dm.get('embedding_drift', 0.0):.4f} "
             f"| {'PASS' if am.get('target_pass', False) and dm.get('recovery_pass', False) else 'FAIL'} |"
         )
     fpath.write_text("\n".join(lines))
@@ -789,8 +1071,8 @@ def write_cora_results_md(baseline_acc, attack_accs, defended_accs,
         "",
         "## Attack Impact",
         "",
-        "| Attack | Type | Accuracy | F1 | Drop | ASR | Drift | Neighborhood Entropy | Homophily Drop | Pass |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| Attack | Type | Accuracy | F1 | Drop | ASR | Drift | Neighborhood Entropy | Homophily Drop | BE Fitness | Assortativity | Pass |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     poisoning = {"nettack", "meta_attack", "random_structure", "dice"}
     for atk, m in attack_metrics.items():
@@ -802,12 +1084,14 @@ def write_cora_results_md(baseline_acc, attack_accs, defended_accs,
             f"| {m.get('embedding_drift', 0.0):.4f} "
             f"| {m.get('neighborhood_entropy', 0.0):.4f} "
             f"| {m.get('homophily_drop', 0.0):+.4f} "
+            f"| {m.get('bose_einstein_fitness', 0.0):.4f} "
+            f"| {m.get('assortativity_coefficient', 0.0):+.4f} "
             f"| {'PASS' if m.get('target_pass', False) else 'FAIL'} |"
         )
 
     lines += ["", "## Defense Performance", "",
-              "| Attack | After Attack | After Defense | Recovery Rate | Drift | Pass |",
-              "| --- | --- | --- | --- | --- | --- |"]
+              "| Attack | After Attack | After Defense | Recovery Rate | Clean Label Recovery | Injected Edge Prune | BE Fitness | Assortativity | Drift | Pass |",
+              "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for atk in attack_accs:
         rr = defended_metrics.get(atk, {}).get(
             "recovery_rate", recovery_rate(baseline_acc, attack_accs[atk], defended_accs[atk])
@@ -815,7 +1099,11 @@ def write_cora_results_md(baseline_acc, attack_accs, defended_accs,
         rr_str = f"{rr:.1%}" if rr is not None else "N/A"
         lines.append(
             f"| {atk} | {attack_accs[atk]:.4f} | {defended_accs[atk]:.4f} "
-            f"| {rr_str} | {defended_metrics.get(atk, {}).get('embedding_drift', 0.0):.4f} "
+            f"| {rr_str} | {defended_metrics.get(atk, {}).get('clean_label_recovery', 0.0):.1%} "
+            f"| {defended_metrics.get(atk, {}).get('injected_edge_prune_rate', 0.0):.1%} "
+            f"| {defended_metrics.get(atk, {}).get('bose_einstein_fitness', 0.0):.4f} "
+            f"| {defended_metrics.get(atk, {}).get('assortativity_coefficient', 0.0):+.4f} "
+            f"| {defended_metrics.get(atk, {}).get('embedding_drift', 0.0):.4f} "
             f"| {'PASS' if defended_metrics.get(atk, {}).get('recovery_pass', False) else 'FAIL'} |"
         )
     fpath.write_text("\n".join(lines))

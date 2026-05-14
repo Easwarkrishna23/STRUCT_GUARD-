@@ -115,6 +115,7 @@ def run_all_attacks(
         min(0.20, attack_cfg.structural_max_budget_ratio),
         attack_cfg.structural_max_budget_ratio,
     ]
+    binary_features = np.all((graph.features == 0.0) | (graph.features == 1.0))
 
     # ── Poisoning Attack 1: Nettack (margin-based) ───────────────
     print("\n[Poisoning 1/4] Nettack (margin scoring)")
@@ -158,6 +159,8 @@ def run_all_attacks(
                 graph, model, clean_params,
                 budget_ratio=ratio,
                 n_steps=min(edge_budget(graph.adj, ratio), attack_cfg.meta_epochs),
+                high_confidence_quantile=attack_cfg.high_confidence_quantile,
+                high_confidence_weight=attack_cfg.high_confidence_weight,
             ),
         )
         for ratio in structural_ratios
@@ -185,15 +188,35 @@ def run_all_attacks(
 
     # ── Evasion Attack 1: Feature Perturbation ────────────────────
     print("\n[Evasion 1/3] Feature Perturbation Attack")
-    feature_candidates = [
-        (
-            f"binary_flip={frac:.2f}",
-            lambda frac=frac: feature_perturbation_attack(
-                graph, noise_mode="binary_flip", flip_fraction=frac, seed=seed
-            ),
+    if binary_features:
+        feature_candidates = [
+            (
+                f"binary_flip={frac:.2f}",
+                lambda frac=frac: feature_perturbation_attack(
+                    graph, noise_mode="binary_flip", flip_fraction=frac, seed=seed
+                ),
+            )
+            for frac in [0.25, 0.35, attack_cfg.cora_feature_flip_cap]
+        ]
+    else:
+        feat_std = float(np.std(graph.features))
+        quantiles = (
+            attack_cfg.elliptic_quantile_clip_low,
+            attack_cfg.elliptic_quantile_clip_high,
         )
-        for frac in [0.25, 0.35, attack_cfg.cora_feature_flip_cap]
-    ]
+        feature_candidates = [
+            (
+                f"centroid_shift={eps:.2f}",
+                lambda eps=eps: feature_perturbation_attack(
+                    graph,
+                    epsilon=eps,
+                    noise_mode="centroid_shift",
+                    clip_quantiles=quantiles,
+                    seed=seed,
+                ),
+            )
+            for eps in [min(1.0, feat_std * 0.50), min(2.0, feat_std), min(4.0, feat_std * 2.0)]
+        ]
     results["feature_perturbation"] = _evaluate(
         "Feature Perturbation", "evasion", feature_candidates, feature_candidates[0][1]
     )
@@ -224,10 +247,22 @@ def run_all_attacks(
                 graph, model, clean_params,
                 epsilon=eps,
                 steps=attack_cfg.grad_steps,
+                clip_quantiles=(
+                    None if binary_features else (
+                        attack_cfg.elliptic_quantile_clip_low,
+                        attack_cfg.elliptic_quantile_clip_high,
+                    )
+                ),
                 attack_mask=np.ones(graph.num_nodes, dtype=bool),
             ),
         )
-        for eps in sorted({attack_cfg.grad_epsilon, 0.30, 0.50})
+        for eps in (
+            sorted({attack_cfg.grad_epsilon, 0.30, 0.50})
+            if binary_features else
+            sorted({min(0.5, float(np.std(graph.features)) * 0.20),
+                    min(1.0, float(np.std(graph.features)) * 0.50),
+                    min(2.0, float(np.std(graph.features)))})
+        )
     ]
     results["gradient_attack"] = _evaluate(
         "Gradient Attack", "evasion", grad_candidates, grad_candidates[0][1]

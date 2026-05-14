@@ -4,10 +4,15 @@ from datasets.cora_loader import GraphData
 from defense.edge_pruning import edge_pruning
 from defense.graph_reconstruction import graph_reconstruction
 from evaluation.metrics import (
+    assortativity_coefficient,
     attack_success_rate,
+    bose_einstein_fitness,
+    clean_label_recovery,
     embedding_drift,
     homophily_drop,
+    injected_edge_prune_rate,
     neighborhood_entropy,
+    power_law_exponent,
     recovery_rate,
 )
 from utils.config import DefenseConfig
@@ -50,6 +55,14 @@ def test_robustness_metrics():
     labels = np.array([0, 0, 1])
     assert neighborhood_entropy(attacked_adj, labels) >= 0.0
     assert homophily_drop(clean_adj, attacked_adj, labels) > 0.0
+    assert assortativity_coefficient(clean_adj) <= 1.0
+    metric_features = np.eye(3, dtype=np.float32)
+    assert bose_einstein_fitness(clean_adj, metric_features) >= 0.0
+    assert power_law_exponent(clean_adj) >= 0.0
+    defended = np.array([0, 1, 1])
+    assert clean_label_recovery(y, clean, attacked, defended) == 1.0
+    defended_adj = clean_adj.copy()
+    assert injected_edge_prune_rate(clean_adj, attacked_adj, defended_adj) == 1.0
 
 
 def test_centrality_low_cosine_bridge_is_pruned():

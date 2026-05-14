@@ -1,0 +1,77 @@
+Dataset 2 Details: Elliptic Bitcoin Transaction Network
+==========================================================
+Timesteps: 49
+Feature dimensions per snapshot: [165]
+Known classes after remapping: [0, 1] (0=licit, 1=illicit, -1=unknown)
+Nodes per timestep min/mean/max: 1089/4158.55/7880
+Edges per timestep min/mean/max: 1168/4782.76/9164
+Average labeled ratio: 0.224276
+Average illicit ratio among labeled nodes: 0.113476
+
+Final Snapshot (t=49)
+----------------------
+Nodes: 2454
+Edges: 2587
+Feature dimensions: 165
+Class distribution: {-1: 1978, 0: 420, 1: 56}
+Train/Val/Test nodes: 285/95/96
+Baseline homophily: 0.865060
+Degree assortativity: -0.112410
+Degree exponent gamma: 1.852703
+Average degree: 2.108394
+Median degree: 2.000000
+Minimum degree: 1
+Maximum degree: 152
+Degree percentiles p10/p25/p75/p90: 1.00, 1.00, 2.00, 3.00
+
+Temporal Structure Summary
+--------------------------
+t=01: nodes=7880, edges=9164, labeled=0.2725, illicit=0.0079, classes={-1: 5733, 0: 2130, 1: 17}
+t=02: nodes=4544, edges=5241, labeled=0.2458, illicit=0.0161, classes={-1: 3427, 0: 1099, 1: 18}
+t=03: nodes=6621, edges=8316, labeled=0.1932, illicit=0.0086, classes={-1: 5342, 0: 1268, 1: 11}
+t=04: nodes=5693, edges=8180, labeled=0.2529, illicit=0.0208, classes={-1: 4253, 0: 1410, 1: 30}
+t=05: nodes=6803, edges=8623, labeled=0.2766, illicit=0.0043, classes={-1: 4921, 0: 1874, 1: 8}
+t=06: nodes=4328, edges=5242, labeled=0.1121, illicit=0.0103, classes={-1: 3843, 0: 480, 1: 5}
+t=07: nodes=6048, edges=7253, labeled=0.1989, illicit=0.0848, classes={-1: 4845, 0: 1101, 1: 102}
+t=08: nodes=4457, edges=5186, labeled=0.2614, illicit=0.0575, classes={-1: 3292, 0: 1098, 1: 67}
+t=09: nodes=4996, edges=5939, labeled=0.1557, illicit=0.3188, classes={-1: 4218, 0: 530, 1: 248}
+t=10: nodes=6727, edges=8588, labeled=0.1445, illicit=0.0185, classes={-1: 5755, 0: 954, 1: 18}
+t=11: nodes=4296, edges=4656, labeled=0.1620, illicit=0.1882, classes={-1: 3600, 0: 565, 1: 131}
+t=12: nodes=2047, edges=2213, labeled=0.2472, illicit=0.0316, classes={-1: 1541, 0: 490, 1: 16}
+t=13: nodes=4528, edges=4827, labeled=0.1787, illicit=0.3597, classes={-1: 3719, 0: 518, 1: 291}
+t=14: nodes=2022, edges=2078, labeled=0.2062, illicit=0.1031, classes={-1: 1605, 0: 374, 1: 43}
+t=15: nodes=3639, edges=3823, labeled=0.1698, illicit=0.2379, classes={-1: 3021, 0: 471, 1: 147}
+t=16: nodes=2975, edges=3120, labeled=0.1782, illicit=0.2415, classes={-1: 2445, 0: 402, 1: 128}
+t=17: nodes=3385, edges=3650, labeled=0.2396, illicit=0.1221, classes={-1: 2574, 0: 712, 1: 99}
+t=18: nodes=1976, edges=2115, labeled=0.1969, illicit=0.1337, classes={-1: 1587, 0: 337, 1: 52}
+t=19: nodes=3506, edges=3838, labeled=0.2125, illicit=0.1074, classes={-1: 2761, 0: 665, 1: 80}
+t=20: nodes=4291, edges=4755, labeled=0.2097, illicit=0.2889, classes={-1: 3391, 0: 640, 1: 260}
+t=21: nodes=3537, edges=3959, labeled=0.1812, illicit=0.1560, classes={-1: 2896, 0: 541, 1: 100}
+t=22: nodes=5894, edges=7014, labeled=0.2991, illicit=0.0896, classes={-1: 4131, 0: 1605, 1: 158}
+t=23: nodes=4165, edges=4584, labeled=0.2850, illicit=0.0447, classes={-1: 2978, 0: 1134, 1: 53}
+t=24: nodes=4592, edges=5124, labeled=0.2452, illicit=0.1217, classes={-1: 3466, 0: 989, 1: 137}
+t=25: nodes=2314, edges=2619, labeled=0.2567, illicit=0.1987, classes={-1: 1720, 0: 476, 1: 118}
+t=26: nodes=2523, edges=2690, labeled=0.2049, illicit=0.1857, classes={-1: 2006, 0: 421, 1: 96}
+t=27: nodes=1089, edges=1168, labeled=0.1892, illicit=0.1165, classes={-1: 883, 0: 182, 1: 24}
+t=28: nodes=1653, edges=1717, labeled=0.1718, illicit=0.2993, classes={-1: 1369, 0: 199, 1: 85}
+t=29: nodes=4275, edges=4541, labeled=0.2746, illicit=0.2802, classes={-1: 3101, 0: 845, 1: 329}
+t=30: nodes=2483, edges=2561, labeled=0.2110, illicit=0.1584, classes={-1: 1959, 0: 441, 1: 83}
+t=31: nodes=2816, edges=3049, labeled=0.2521, illicit=0.1493, classes={-1: 2106, 0: 604, 1: 106}
+t=32: nodes=4525, edges=4952, labeled=0.2924, illicit=0.2585, classes={-1: 3202, 0: 981, 1: 342}
+t=33: nodes=3151, edges=3366, labeled=0.1400, illicit=0.0522, classes={-1: 2710, 0: 418, 1: 23}
+t=34: nodes=2486, edges=2692, labeled=0.2072, illicit=0.0718, classes={-1: 1971, 0: 478, 1: 37}
+t=35: nodes=5507, edges=6351, labeled=0.2435, illicit=0.1357, classes={-1: 4166, 0: 1159, 1: 182}
+t=36: nodes=6393, edges=7813, labeled=0.2672, illicit=0.0193, classes={-1: 4685, 0: 1675, 1: 33}
+t=37: nodes=3306, edges=3849, labeled=0.1506, illicit=0.0803, classes={-1: 2808, 0: 458, 1: 40}
+t=38: nodes=2891, edges=3094, labeled=0.2615, illicit=0.1468, classes={-1: 2135, 0: 645, 1: 111}
+t=39: nodes=2760, edges=2914, labeled=0.4286, illicit=0.0685, classes={-1: 1577, 0: 1102, 1: 81}
+t=40: nodes=4481, edges=5246, labeled=0.2703, illicit=0.0925, classes={-1: 3270, 0: 1099, 1: 112}
+t=41: nodes=5342, edges=6093, labeled=0.2119, illicit=0.1025, classes={-1: 4210, 0: 1016, 1: 116}
+t=42: nodes=7140, edges=8493, labeled=0.3017, illicit=0.1110, classes={-1: 4986, 0: 1915, 1: 239}
+t=43: nodes=5063, edges=5950, labeled=0.2706, illicit=0.0175, classes={-1: 3693, 0: 1346, 1: 24}
+t=44: nodes=4975, edges=5551, labeled=0.3198, illicit=0.0151, classes={-1: 3384, 0: 1567, 1: 24}
+t=45: nodes=5598, edges=6673, labeled=0.2181, illicit=0.0041, classes={-1: 4377, 0: 1216, 1: 5}
+t=46: nodes=3519, edges=3866, labeled=0.2023, illicit=0.0028, classes={-1: 2807, 0: 710, 1: 2}
+t=47: nodes=5121, edges=5748, labeled=0.1652, illicit=0.0260, classes={-1: 4275, 0: 824, 1: 22}
+t=48: nodes=2954, edges=3284, labeled=0.1594, illicit=0.0764, classes={-1: 2483, 0: 435, 1: 36}
+t=49: nodes=2454, edges=2587, labeled=0.1940, illicit=0.1176, classes={-1: 1978, 0: 420, 1: 56}

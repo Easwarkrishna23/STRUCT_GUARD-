@@ -1,0 +1,18 @@
+Dataset 1 Details: Cora Citation Network
+================================================
+Name: cora
+Nodes: 2708
+Edges: 5278
+Feature dimensions: 1433
+Classes: 7
+Train/Val/Test nodes: 140/500/1000
+Class distribution: {0: 351, 1: 217, 2: 418, 3: 818, 4: 426, 5: 298, 6: 180}
+Baseline homophily: 0.809966
+Degree assortativity: -0.065871
+Degree exponent gamma: 1.566327
+Average degree: 3.898080
+Median degree: 3.000000
+Minimum degree: 1
+Maximum degree: 168
+Degree percentiles p10/p25/p75/p90: 1.00, 2.00, 5.00, 7.00
+Temporal structure: static single-snapshot citation graph

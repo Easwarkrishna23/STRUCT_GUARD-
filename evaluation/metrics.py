@@ -128,6 +128,98 @@ def homophily_drop(
     )
 
 
+def assortativity_coefficient(adj: np.ndarray) -> float:
+    """Degree assortativity coefficient, with NaN mapped to 0 for reporting."""
+    import networkx as nx
+
+    G = nx.from_numpy_array((np.asarray(adj) > 0).astype(np.float32))
+    if G.number_of_edges() == 0:
+        return 0.0
+    value = nx.degree_assortativity_coefficient(G)
+    return 0.0 if not np.isfinite(value) else float(value)
+
+
+def power_law_exponent(adj_or_degrees: np.ndarray, k_min: int = 1) -> float:
+    """Estimate scale-free degree exponent gamma by a discrete MLE surrogate."""
+    arr = np.asarray(adj_or_degrees)
+    degrees = arr.sum(axis=1) if arr.ndim == 2 else arr
+    degrees = np.asarray(degrees, dtype=np.float64)
+    tail = degrees[degrees >= max(k_min, 1)]
+    if tail.size < 2:
+        return 0.0
+    denom = np.log(np.maximum(tail, k_min) / max(k_min - 0.5, 0.5)).sum()
+    if denom <= 0:
+        return 0.0
+    return float(1.0 + tail.size / denom)
+
+
+def bose_einstein_fitness(
+    adj: np.ndarray,
+    features: np.ndarray,
+    eps: float = 1e-8,
+) -> float:
+    """
+    Mean edge fitness combining semantic similarity and degree consistency.
+
+    Higher values indicate that edges follow a natural scale-free attachment
+    pattern; low values indicate unlikely growth that a similarity-only defense
+    can miss.
+    """
+    adj = (np.asarray(adj) > 0).astype(np.float32)
+    rows, cols = np.where(np.triu(adj, k=1) > 0)
+    if rows.size == 0:
+        return 0.0
+    degrees = adj.sum(axis=1).astype(np.float64)
+    deg_norm = np.log1p(degrees)
+    temp = float(np.std(deg_norm) + eps)
+
+    x = np.asarray(features, dtype=np.float64)
+    norms = np.linalg.norm(x, axis=1, keepdims=True)
+    x_norm = x / np.maximum(norms, eps)
+    cosine = (x_norm[rows] * x_norm[cols]).sum(axis=1)
+    cosine = np.clip((cosine + 1.0) / 2.0, 0.0, 1.0)
+
+    degree_gap = np.abs(deg_norm[rows] - deg_norm[cols])
+    degree_fit = np.exp(-degree_gap / temp)
+    return float(np.mean(cosine * degree_fit))
+
+
+def clean_label_recovery(
+    y_true: np.ndarray,
+    y_pred_clean: np.ndarray,
+    y_pred_attacked: np.ndarray,
+    y_pred_defended: np.ndarray,
+    mask: Optional[np.ndarray] = None,
+) -> float:
+    """Fraction of clean-correct, attack-broken nodes restored by defense."""
+    y_true = _masked(np.asarray(y_true), mask)
+    clean = _masked(np.asarray(y_pred_clean), mask)
+    attacked = _masked(np.asarray(y_pred_attacked), mask)
+    defended = _masked(np.asarray(y_pred_defended), mask)
+    valid = y_true >= 0
+    damaged = valid & (clean == y_true) & (attacked != y_true)
+    if damaged.sum() == 0:
+        return 0.0
+    return float((defended[damaged] == y_true[damaged]).mean())
+
+
+def injected_edge_prune_rate(
+    clean_adj: np.ndarray,
+    attacked_adj: np.ndarray,
+    defended_adj: np.ndarray,
+) -> float:
+    """Fraction of attack-injected edges removed by the defense."""
+    clean = np.asarray(clean_adj) > 0
+    attacked = np.asarray(attacked_adj) > 0
+    defended = np.asarray(defended_adj) > 0
+    injected = np.triu(attacked & ~clean, k=1)
+    total = int(injected.sum())
+    if total == 0:
+        return 1.0
+    removed = int((injected & ~np.triu(defended, k=1)).sum())
+    return float(removed / total)
+
+
 def neighborhood_entropy(
     adj: np.ndarray,
     labels: np.ndarray,

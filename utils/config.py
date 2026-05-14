@@ -20,6 +20,7 @@ class ModelConfig:
 class AttackConfig:
     # Experiment acceptance gate. Relative target means attacked accuracy must be
     # <= 50% of baseline accuracy, i.e. baseline - attacked >= 0.5 * baseline.
+    # This remains stricter than the current command's >=30% degradation floor.
     target_accuracy_drop: float = 0.0
     target_drop_fraction: float = 0.50
     enforce_target_drop: bool = True
@@ -49,6 +50,10 @@ class AttackConfig:
     grad_epsilon: float = 0.15
     grad_steps: int = 20
 
+    # Surrogate loss / high-confidence targeting.
+    high_confidence_quantile: float = 0.70
+    high_confidence_weight: float = 2.0
+
     # Feature caps for realistic calibration.
     cora_feature_flip_cap: float = 0.50
     elliptic_quantile_clip_low: float = 0.01
@@ -77,6 +82,20 @@ class DefenseConfig:
     degree_target_z: float = 1.0
     small_world_apl_tolerance: float = 0.15
     topic_top_k: int = 20
+
+    # Scale-Free Integrity Engine thresholds.
+    preferential_low_degree_quantile: float = 0.35
+    preferential_attachment_threshold: float = 0.10
+    assortativity_cosine_threshold: float = 0.15
+    assortativity_degree_gap_z: float = 1.50
+    eigenvector_top_quantile: float = 0.90
+    bose_einstein_fitness_threshold: float = 0.25
+    gamma_tolerance: float = 0.35
+    hierarchical_slope_target: float = -1.0
+    hierarchical_slope_tolerance: float = 0.65
+    path_length_reduction_epsilon: float = 0.10
+    temporal_drift_z_threshold: float = 3.0
+    suspicious_node_edge_keep_ratio: float = 0.10
 
     # Adversarial retraining augmentation.
     adv_feature_epsilon: float = 0.05
@@ -108,7 +127,7 @@ class DynamicGraphConfig:
 
 @dataclass
 class Config:
-    experiment_version: str = "thesis-mandatory-drop50-recovery-v3"
+    experiment_version: str = "scale-free-integrity-engine-v1"
     seed: int = 42
     data_dir: Path = field(default_factory=lambda: Path("data"))
     results_dir: Path = field(default_factory=lambda: Path("results"))

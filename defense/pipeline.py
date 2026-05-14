@@ -26,7 +26,7 @@ from defense.adversarial_training import adversarial_retrain_model
 from defense.edge_pruning import edge_pruning
 from defense.feature_smoothing import feature_smoothing
 from defense.graph_reconstruction import graph_reconstruction
-from defense.semantic_reasoning import detect_suspicious_edges
+from defense.semantic_reasoning import detect_suspicious_edges, detect_temporal_drift
 from utils.config import DefenseConfig, ModelConfig
 
 
@@ -34,6 +34,7 @@ from utils.config import DefenseConfig, ModelConfig
 class DefenseResult:
     defended_graph: GraphData
     semantic_stats: dict
+    temporal_stats: dict
     pruning_stats: dict
     smoothing_stats: dict
     reconstruction_stats: dict
@@ -54,6 +55,7 @@ def run_defense(
     damage_threshold: float = 0.05,
     clean_graph: GraphData | None = None,
     clean_params: Any | None = None,
+    previous_graph: GraphData | None = None,
 ) -> DefenseResult:
     """
     Apply semantic self-healing, STRUC-GUARD+ filtering, and robust retraining.
@@ -66,8 +68,14 @@ def run_defense(
           f"(damage={damage:.3f})")
 
     suspicious_edges, semantic_stats = detect_suspicious_edges(attacked_graph, defense_cfg)
+    suspicious_nodes, temporal_stats = detect_temporal_drift(
+        attacked_graph, previous_graph, defense_cfg
+    )
     pruned_graph, pruning_stats = edge_pruning(
-        attacked_graph, defense_cfg, suspicious_edges=suspicious_edges
+        attacked_graph,
+        defense_cfg,
+        suspicious_edges=suspicious_edges,
+        suspicious_nodes=suspicious_nodes,
     )
 
     candidates: list[tuple[str, GraphData, dict, dict]] = [
@@ -145,6 +153,7 @@ def run_defense(
     return DefenseResult(
         defended_graph=defended_graph,
         semantic_stats=semantic_stats,
+        temporal_stats=temporal_stats,
         pruning_stats=pruning_stats,
         smoothing_stats=smoothing_stats,
         reconstruction_stats=recon_stats,
@@ -171,6 +180,7 @@ def run_all_defenses(
     damage_threshold: float = 0.05,
     clean_graph: GraphData | None = None,
     clean_params: Any | None = None,
+    previous_graph: GraphData | None = None,
 ) -> dict[str, DefenseResult]:
     """
     Run defense pipeline for every attack result from Phase 4.
@@ -205,6 +215,7 @@ def run_all_defenses(
             damage_threshold=damage_threshold,
             clean_graph=clean_graph,
             clean_params=clean_params,
+            previous_graph=previous_graph,
         )
         defense_results[attack_name] = dr
 

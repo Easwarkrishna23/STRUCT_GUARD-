@@ -45,3 +45,47 @@ def low_margin_high_degree_targets(
     score = margin_score + 0.25 * degree_score
     order = np.argsort(-score)
     return candidates[order[:max_targets]].astype(int)
+
+
+def high_confidence_high_degree_targets(
+    graph: GraphData,
+    model: nn.Module,
+    params,
+    mask: np.ndarray | None = None,
+    max_targets: int = 80,
+    confidence_quantile: float = 0.70,
+) -> np.ndarray:
+    """Select correctly classified high-confidence, high-degree target nodes."""
+    if mask is None:
+        mask = graph.test_mask
+
+    _, logits, probs = model.apply(
+        {"params": params},
+        jnp.array(graph.features),
+        jnp.array(graph.adj_norm),
+        training=False,
+    )
+    logits = np.asarray(logits)
+    probs = np.asarray(probs)
+    preds = logits.argmax(axis=1)
+    labels = graph.labels
+    valid = np.asarray(mask, dtype=bool) & (labels >= 0) & (preds == labels)
+    candidates = np.where(valid)[0]
+    if candidates.size == 0:
+        return low_margin_high_degree_targets(
+            graph, model, params, mask=mask, max_targets=max_targets
+        )
+
+    confidence = probs[candidates, preds[candidates]]
+    threshold = float(np.quantile(confidence, confidence_quantile))
+    high_conf = candidates[confidence >= threshold]
+    if high_conf.size == 0:
+        high_conf = candidates
+
+    degrees = graph.adj.sum(axis=1)[high_conf]
+    high_confidence = probs[high_conf, preds[high_conf]]
+    degree_score = degrees / max(float(degrees.max()), 1.0)
+    confidence_score = high_confidence / max(float(high_confidence.max()), 1e-8)
+    score = confidence_score + 0.35 * degree_score
+    order = np.argsort(-score)
+    return high_conf[order[:max_targets]].astype(int)

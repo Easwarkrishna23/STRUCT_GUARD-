@@ -38,6 +38,7 @@ def edge_flip_attack(
     test_nodes = np.where(graph.test_mask)[0]
 
     sim = compute_cosine_similarity(graph.features)
+    bottleneck = _edge_betweenness_lookup(adj) if strategy in {"degree", "homophily_break", "bottleneck"} else {}
 
     if strategy in {"degree", "homophily_break"}:
         degrees = adj.sum(axis=1)[test_nodes]
@@ -60,8 +61,12 @@ def edge_flip_attack(
         # Remove a similar existing edge; add a dissimilar non-edge. This breaks
         # homophily without requiring access to hidden test labels.
         if len(neighbors) > 0 and flipped < budget:
-            if strategy == "homophily_break":
-                nb = neighbors[int(np.argmax(sim[v, neighbors]))]
+            if strategy in {"homophily_break", "bottleneck"}:
+                scores = np.array([
+                    bottleneck.get((int(min(v, nb)), int(max(v, nb))), 0.0) + 0.10 * sim[v, nb]
+                    for nb in neighbors
+                ])
+                nb = neighbors[int(np.argmax(scores))]
             else:
                 nb = rng.choice(neighbors)
             adj[v, nb] = 0.0
@@ -70,10 +75,13 @@ def edge_flip_attack(
 
         # Add one new edge (if any non-neighbors remain)
         if len(non_neighbors) > 0 and flipped < budget:
-            if strategy == "homophily_break":
+            if strategy in {"homophily_break", "bottleneck"}:
                 sample_size = min(len(non_neighbors), 512)
                 sample = rng.choice(non_neighbors, size=sample_size, replace=False)
-                nb = sample[int(np.argmin(sim[v, sample]))]
+                degrees = adj.sum(axis=1)
+                deg_score = degrees[sample] / max(float(degrees.max()), 1.0)
+                score = (1.0 - sim[v, sample]) + 0.25 * deg_score
+                nb = sample[int(np.argmax(score))]
             else:
                 nb = rng.choice(non_neighbors)
             adj[v, nb] = 1.0
@@ -93,5 +101,23 @@ def edge_flip_attack(
         n_features_perturbed=0,
         budget_used=flipped,
         target_nodes=test_nodes,
-        diagnostics={"strategy": strategy, "budget_ratio": budget_ratio},
+        diagnostics={
+            "strategy": strategy,
+            "budget_ratio": budget_ratio,
+            "bottleneck": strategy in {"homophily_break", "bottleneck"},
+        },
     )
+
+
+def _edge_betweenness_lookup(adj: np.ndarray) -> dict[tuple[int, int], float]:
+    import networkx as nx
+
+    G = nx.from_numpy_array(adj)
+    if G.number_of_edges() == 0:
+        return {}
+    k = min(256, G.number_of_nodes())
+    centrality = nx.edge_betweenness_centrality(G, k=k, seed=42, normalized=True)
+    return {
+        (int(min(u, v)), int(max(u, v))): float(c)
+        for (u, v), c in centrality.items()
+    }

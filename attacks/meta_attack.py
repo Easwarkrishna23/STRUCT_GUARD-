@@ -36,6 +36,8 @@ def meta_attack(
     budget_ratio: float = 0.05,
     n_steps: int = 20,
     inner_epochs: int = 15,
+    high_confidence_quantile: float = 0.70,
+    high_confidence_weight: float = 2.0,
 ) -> AttackResult:
     """
     Global untargeted poisoning via meta-gradient on adjacency.
@@ -72,6 +74,11 @@ def meta_attack(
     val_mask = jnp.array(graph.val_mask)
     tr_mask  = jnp.array(graph.train_mask)
     n        = adj.shape[0]
+    high_conf_mask, clean_confidence = _high_confidence_mask(
+        graph, model, params, high_confidence_quantile
+    )
+    high_conf_mask_j = jnp.array(high_conf_mask)
+    clean_confidence_j = jnp.array(clean_confidence)
 
     # Maintain a live model state for inner-loop warm retraining
     tx = optax.adamw(learning_rate=0.01, weight_decay=5e-4)
@@ -86,7 +93,18 @@ def meta_attack(
         a_hat = jnp.array(normalize_adjacency(adj))
 
         # Meta-gradient on CURRENT (warm) params: ∂(val_loss) / ∂A
-        grad = _meta_grad(state.params, model, x_j, a_hat, lbl, val_mask, n)
+        grad = _meta_grad(
+            state.params,
+            model,
+            x_j,
+            a_hat,
+            lbl,
+            val_mask,
+            high_conf_mask_j,
+            clean_confidence_j,
+            high_confidence_weight,
+            n,
+        )
 
         flip_dir = 1.0 - 2.0 * adj
         scores = grad * flip_dir
@@ -126,6 +144,8 @@ def meta_attack(
             "budget_ratio": budget_ratio,
             "n_steps": n_steps,
             "inner_epochs": inner_epochs,
+            "surrogate": "high_confidence_weighted_validation_loss",
+            "high_confidence_nodes": int(high_conf_mask.sum()),
         },
     )
 
@@ -134,18 +154,76 @@ def meta_attack(
 # JAX gradient helper
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _val_loss(params, model, x, a_hat_flat, labels, val_mask, n):
+def _val_loss(
+    params,
+    model,
+    x,
+    a_hat_flat,
+    labels,
+    val_mask,
+    high_conf_mask,
+    clean_confidence,
+    high_confidence_weight,
+    n,
+):
     a_hat = a_hat_flat.reshape(n, n)
     _, logits, _ = model.apply({"params": params}, x, a_hat, training=False)
     log_probs = jax.nn.log_softmax(logits, axis=-1)
-    valid = val_mask & (labels >= 0)
+    valid = (val_mask | high_conf_mask) & (labels >= 0)
     true_lp = log_probs[jnp.arange(n), jnp.where(labels >= 0, labels, 0)]
-    loss = -jnp.where(valid, true_lp, 0.0).sum() / jnp.maximum(valid.sum(), 1)
+    weights = 1.0 + high_confidence_weight * high_conf_mask.astype(jnp.float32) * clean_confidence
+    loss = -jnp.where(valid, weights * true_lp, 0.0).sum() / jnp.maximum(valid.sum(), 1)
     return loss
 
 
-def _meta_grad(params, model, x, a_hat, labels, val_mask, n):
+def _meta_grad(
+    params,
+    model,
+    x,
+    a_hat,
+    labels,
+    val_mask,
+    high_conf_mask,
+    clean_confidence,
+    high_confidence_weight,
+    n,
+):
     a_flat = a_hat.reshape(-1)
     grad_fn = jax.grad(_val_loss, argnums=3)
-    g = grad_fn(params, model, x, a_flat, labels, val_mask, n)
+    g = grad_fn(
+        params,
+        model,
+        x,
+        a_flat,
+        labels,
+        val_mask,
+        high_conf_mask,
+        clean_confidence,
+        high_confidence_weight,
+        n,
+    )
     return np.array(g).reshape(n, n)
+
+
+def _high_confidence_mask(
+    graph: GraphData,
+    model: nn.Module,
+    params: any,
+    quantile: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    _, logits, probs = model.apply(
+        {"params": params},
+        jnp.array(graph.features),
+        jnp.array(graph.adj_norm),
+        training=False,
+    )
+    logits = np.asarray(logits)
+    probs = np.asarray(probs)
+    preds = logits.argmax(axis=1)
+    confidence = probs[np.arange(graph.num_nodes), preds]
+    eligible = (graph.train_mask | graph.val_mask) & (graph.labels >= 0) & (preds == graph.labels)
+    if eligible.sum() == 0:
+        return np.zeros(graph.num_nodes, dtype=bool), confidence.astype(np.float32)
+    threshold = float(np.quantile(confidence[eligible], quantile))
+    mask = eligible & (confidence >= threshold)
+    return mask.astype(bool), confidence.astype(np.float32)

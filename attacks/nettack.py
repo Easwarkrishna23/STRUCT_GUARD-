@@ -28,7 +28,7 @@ from typing import Optional
 
 from datasets.cora_loader import GraphData
 from attacks.base import AttackResult, diff_edges
-from attacks.selection import low_margin_high_degree_targets
+from attacks.selection import high_confidence_high_degree_targets
 from utils.graph_utils import normalize_adjacency
 from flax import linen as nn
 
@@ -61,7 +61,7 @@ def nettack(
 
     # Select target nodes: correctly-classified test nodes
     if target_nodes is None:
-        target_nodes = low_margin_high_degree_targets(
+        target_nodes = high_confidence_high_degree_targets(
             graph, model, params, mask=graph.test_mask, max_targets=80
         )
 
@@ -90,7 +90,11 @@ def nettack(
         n_features_perturbed=feat_diff,
         budget_used=len(target_nodes) * n_perturbations,
         target_nodes=np.asarray(target_nodes, dtype=int),
-        diagnostics={"n_perturbations_per_target": n_perturbations},
+        diagnostics={
+            "n_perturbations_per_target": n_perturbations,
+            "targeting": "high_confidence_high_degree",
+            "surrogate": "margin_gradient_matching",
+        },
     )
 
 
@@ -102,6 +106,13 @@ def _attack_single_node(v, adj, feats, labels, model, params,
                          n_perturbations, direct_attack):
     n = adj.shape[0]
     true_label = int(labels[v])
+    binary_features = np.all((feats == 0.0) | (feats == 1.0))
+    if binary_features:
+        feat_lo = feat_hi = feat_mid = None
+    else:
+        feat_lo = np.quantile(feats, 0.01, axis=0)
+        feat_hi = np.quantile(feats, 0.99, axis=0)
+        feat_mid = np.median(feats, axis=0)
 
     for _ in range(n_perturbations):
         a_hat = normalize_adjacency(adj)
@@ -174,7 +185,9 @@ def _attack_single_node(v, adj, feats, labels, model, params,
         best_f = -1
         for f in top_feats:
             feats_try = feats.copy()
-            feats_try[v, f] = 1.0 - feats_try[v, f]
+            feats_try[v, f] = _adversarial_feature_value(
+                feats_try[v, f], f, binary_features, feat_lo, feat_hi, feat_mid
+            )
             x_try = jnp.array(feats_try)
             _, logits_try, _ = model.apply(
                 {"params": params}, x_try, a_hat_cur, training=False
@@ -186,7 +199,9 @@ def _attack_single_node(v, adj, feats, labels, model, params,
                 best_f = f
 
         if best_f >= 0:
-            feats[v, best_f] = 1.0 - feats[v, best_f]
+            feats[v, best_f] = _adversarial_feature_value(
+                feats[v, best_f], best_f, binary_features, feat_lo, feat_hi, feat_mid
+            )
 
     return adj, feats
 
@@ -196,6 +211,12 @@ def _classification_margin(logits_v: np.ndarray, true_label: int) -> float:
     true_score  = logits_v[true_label]
     other_max   = float(np.max(np.delete(logits_v, true_label)))
     return float(true_score - other_max)
+
+
+def _adversarial_feature_value(value, feature_idx, binary_features, lo, hi, mid):
+    if binary_features:
+        return 1.0 - value
+    return lo[feature_idx] if value >= mid[feature_idx] else hi[feature_idx]
 
 
 def _eval_full(params, model, x, a_hat, labels, mask):
