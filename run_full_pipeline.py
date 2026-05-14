@@ -177,10 +177,11 @@ def phase3(cora, elliptic):
 CACHE_FILE = ROOT / "results" / "phase45_cache.json"
 
 
-def _save_cache(attack_accs, defended_accs, attack_metrics, defended_metrics):
+def _save_cache(baseline_acc, attack_accs, defended_accs, attack_metrics, defended_metrics):
     import json
     cache = {
         "config_signature": cfg.signature(),
+        "baseline_acc":     baseline_acc,
         "attack_accs":      attack_accs,
         "defended_accs":    defended_accs,
         "attack_metrics":   attack_metrics,
@@ -375,7 +376,7 @@ def phase45(cora, cora_model, cora_params, baseline_acc):
         details = "\n  - ".join(defense_failures)
         raise RuntimeError("Defense recovery gate failed:\n  - " + details)
 
-    _save_cache(attack_accs, defended_accs, attack_metrics, defended_metrics)
+    _save_cache(baseline_acc, attack_accs, defended_accs, attack_metrics, defended_metrics)
     print(f"  Phase 4+5 done in {_elapsed(t0)}")
     return attack_results, defense_results, attack_accs, defended_accs, attack_metrics, defended_metrics
 
