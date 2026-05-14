@@ -355,14 +355,20 @@ def phase45(cora, cora_model, cora_params, baseline_acc):
             "assortativity_coefficient": assortativity_coefficient(dr.defended_graph.adj),
             "recovery_pass": m["accuracy"] >= baseline_acc,
         })
+        m["prune_pass"] = (
+            m["injected_edge_prune_rate"] >= cfg.defense.minimum_injected_edge_prune_rate
+        )
         defended_accs[atk_name]    = m["accuracy"]
         defended_metrics[atk_name] = m
         rr_str = f"{rr:.1%}" if rr is not None else "N/A"
         print(f"  {atk_name:25s}  acc={m['accuracy']:.4f}  f1={m['f1']:.4f}  "
-              f"recovery={rr_str}  pass={m['recovery_pass']}")
-        if not m["recovery_pass"]:
+              f"recovery={rr_str}  prune={m['injected_edge_prune_rate']:.1%}  "
+              f"pass={m['recovery_pass'] and m['prune_pass']}")
+        if not m["recovery_pass"] or not m["prune_pass"]:
             defense_failures.append(
-                f"{atk_name}: defended={m['accuracy']:.4f}, baseline={baseline_acc:.4f}"
+                f"{atk_name}: defended={m['accuracy']:.4f}, baseline={baseline_acc:.4f}, "
+                f"injected_prune={m['injected_edge_prune_rate']:.1%}, "
+                f"target_prune={cfg.defense.minimum_injected_edge_prune_rate:.1%}"
             )
 
     if defense_failures:
@@ -937,15 +943,21 @@ def _phase7_all_attack_defense(elliptic, ell_model, ell_params, baseline_accs):
             "assortativity_coefficient": assortativity_coefficient(dr.defended_graph.adj),
             "recovery_pass": m["accuracy"] >= baseline_acc,
         })
+        m["prune_pass"] = (
+            m["injected_edge_prune_rate"] >= cfg.defense.minimum_injected_edge_prune_rate
+        )
         defended_accs[atk_name] = m["accuracy"]
         defended_metrics[atk_name] = m
         rr_str = f"{rr:.1%}" if rr is not None else "N/A"
         print(f"  {atk_name:25s} acc={m['accuracy']:.4f} recovery={rr_str} "
-              f"pruned_injected={m['injected_edge_prune_rate']:.1%} pass={m['recovery_pass']}")
-        if not m["recovery_pass"]:
+              f"pruned_injected={m['injected_edge_prune_rate']:.1%} "
+              f"pass={m['recovery_pass'] and m['prune_pass']}")
+        if not m["recovery_pass"] or not m["prune_pass"]:
             raise RuntimeError(
                 f"Elliptic defense recovery gate failed for {atk_name}: "
-                f"defended={m['accuracy']:.4f}, baseline={baseline_acc:.4f}"
+                f"defended={m['accuracy']:.4f}, baseline={baseline_acc:.4f}, "
+                f"injected_prune={m['injected_edge_prune_rate']:.1%}, "
+                f"target_prune={cfg.defense.minimum_injected_edge_prune_rate:.1%}"
             )
 
     plot_accuracy_bar(
@@ -1050,7 +1062,7 @@ def _write_elliptic_md(
             f"| {am.get('bose_einstein_fitness', 0.0):.4f} | {am.get('assortativity_coefficient', 0.0):+.4f} "
             f"| {defended_accs[atk]:.4f} | {rr_str} | {dm.get('clean_label_recovery', 0.0):.1%} "
             f"| {dm.get('injected_edge_prune_rate', 0.0):.1%} | {dm.get('embedding_drift', 0.0):.4f} "
-            f"| {'PASS' if am.get('target_pass', False) and dm.get('recovery_pass', False) else 'FAIL'} |"
+            f"| {'PASS' if am.get('target_pass', False) and dm.get('recovery_pass', False) and dm.get('prune_pass', False) else 'FAIL'} |"
         )
     fpath.write_text("\n".join(lines))
     print(f"  [Tables] Saved → {fpath}")
@@ -1104,7 +1116,7 @@ def write_cora_results_md(baseline_acc, attack_accs, defended_accs,
             f"| {defended_metrics.get(atk, {}).get('bose_einstein_fitness', 0.0):.4f} "
             f"| {defended_metrics.get(atk, {}).get('assortativity_coefficient', 0.0):+.4f} "
             f"| {defended_metrics.get(atk, {}).get('embedding_drift', 0.0):.4f} "
-            f"| {'PASS' if defended_metrics.get(atk, {}).get('recovery_pass', False) else 'FAIL'} |"
+            f"| {'PASS' if defended_metrics.get(atk, {}).get('recovery_pass', False) and defended_metrics.get(atk, {}).get('prune_pass', False) else 'FAIL'} |"
         )
     fpath.write_text("\n".join(lines))
     print(f"  [Tables] Saved → {fpath}")

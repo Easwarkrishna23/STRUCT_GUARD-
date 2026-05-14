@@ -96,6 +96,7 @@ class DefenseConfig:
     path_length_reduction_epsilon: float = 0.10
     temporal_drift_z_threshold: float = 3.0
     suspicious_node_edge_keep_ratio: float = 0.10
+    minimum_injected_edge_prune_rate: float = 0.90
 
     # Adversarial retraining augmentation.
     adv_feature_epsilon: float = 0.05
@@ -127,7 +128,7 @@ class DynamicGraphConfig:
 
 @dataclass
 class Config:
-    experiment_version: str = "scale-free-integrity-engine-v1"
+    experiment_version: str = "scale-free-integrity-engine-v2"
     seed: int = 42
     data_dir: Path = field(default_factory=lambda: Path("data"))
     results_dir: Path = field(default_factory=lambda: Path("results"))
