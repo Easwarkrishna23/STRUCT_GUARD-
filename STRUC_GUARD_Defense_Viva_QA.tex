@@ -1,0 +1,700 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[left=1.2in,right=1in,top=1in,bottom=1in]{geometry}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{setspace}
+\usepackage{titlesec}
+
+\onehalfspacing
+\setlength{\parindent}{0.35in}
+\setlength{\parskip}{4pt}
+
+\titleformat{\section}{\normalfont\bfseries\Large}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalfont\bfseries\large}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}{\normalfont\bfseries\normalsize}{\thesubsubsection}{1em}{}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    urlcolor=black,
+    citecolor=black
+}
+
+\begin{document}
+
+\begin{center}
+{\Large \textbf{Expanded Thesis and Viva Explanation}}\\[0.15cm]
+{\large \textbf{STRUC-GUARD+ Defense, Metrics, Results, and Full Project Q\&A}}\\[0.15cm]
+{\normalsize Companion notes for ``Robustness of Graph Neural Networks using STRUC-GUARD+ and Ontology-Driven Self-Healing''}
+\end{center}
+
+\tableofcontents
+\newpage
+
+% ==========================================================
+\section{Defense Input Clarification: Does STRUC-GUARD+ Know Whether the Graph is Attacked?}
+% ==========================================================
+
+\subsection{Clean Graph, Attacked Graph, and Defended Graph}
+The clean graph is represented as:
+
+$$
+G=(V,E,X)
+$$
+
+where $V$ is the node set, $E$ is the original edge set, and $X$ is the clean feature matrix. After an adversarial attack, the graph becomes:
+
+$$
+G'=(V,E',X')
+$$
+
+where $E'$ may contain injected or deleted edges, and $X'$ may contain perturbed node features. The defended graph produced by STRUC-GUARD+ is:
+
+$$
+G^*=(V,E^*,X^*)
+$$
+
+where $E^*$ is the pruned and reconstructed defended edge set, and $X^*$ is the denoised feature matrix.
+
+\subsection{Does the Defense Know if the Input is Attacked?}
+STRUC-GUARD+ does not magically know that the input graph is attacked. It is a graph integrity filter. It is applied to whichever graph is passed into the defense pipeline. In the experimental pipeline, this is normally the attacked graph $G'$, because the attack phase is executed first and then the defense phase is applied.
+
+Algorithmically, the defense asks a different question:
+
+\begin{quote}
+Is this edge, feature pattern, neighborhood, or temporal behavior trustworthy under semantic, topological, and scale-free graph rules?
+\end{quote}
+
+Therefore, STRUC-GUARD+ can also be applied to a clean graph. If the input graph is clean, most edges will not satisfy the suspicious conditions, so they will be preserved. The defense is not a binary attacked/not-attacked detector; it is an anomaly-sensitive self-healing pipeline.
+
+\subsection{Why the Defense Does Not Remove Important Edges}
+An important edge is generally expected to have at least some of the following properties:
+
+\begin{itemize}
+    \item reasonable feature similarity,
+    \item semantic topic overlap,
+    \item plausible degree relationship,
+    \item no extreme hub-outlier abnormality,
+    \item no severe temporal drift,
+    \item no abnormal low fitness under graph growth assumptions.
+\end{itemize}
+
+STRUC-GUARD+ does not remove an edge simply because one score is imperfect. It uses multiple signals. An edge becomes a strong pruning candidate when it is suspicious in more than one way, for example:
+
+$$
+J(u,v)<0.15
+$$
+
+or:
+
+$$
+B(u,v)\text{ is high and }\cos(x_u,x_v)<0.2
+$$
+
+or:
+
+$$
+\phi_{uv}\text{ is among the lowest-fitness edges of a degree-anomalous node}
+$$
+
+This makes the defense conservative. It removes high-risk edges first, then reconstructs useful safe edges using small-world KNN reconstruction.
+
+\subsection{Safeguards Against Over-Pruning}
+The implementation contains practical safeguards:
+
+\begin{enumerate}
+    \item \textbf{Minimum edge-retention ratio:} the defense avoids removing too many edges from the graph.
+    \item \textbf{Connectivity restoration:} if pruning disconnects the graph too much, high-similarity edges are restored to preserve connectivity.
+    \item \textbf{Small-world reconstruction:} removed structure is partially repaired using topology-safe KNN edges.
+    \item \textbf{Local clustering check:} new edges are added only if endpoint clustering does not degrade.
+    \item \textbf{Average path length tolerance:} the defense avoids adding shortcut edges that collapse the graph structure.
+    \item \textbf{Residual feature smoothing:} features are denoised without completely overwriting original node identity.
+\end{enumerate}
+
+Hence, STRUC-GUARD+ is not a blind edge-removal method. It is a prune-denoise-reconstruct-retrain system.
+
+% ==========================================================
+\section{STRUC-GUARD+ Algorithm Explanation}
+% ==========================================================
+
+\subsection{Input}
+The defense receives the possibly attacked graph:
+
+$$
+G'=(V,E',X)
+$$
+
+and a trained GNN model:
+
+$$
+f_{\theta}=(MSG,AGG,UPD)
+$$
+
+where $MSG$ generates messages, $AGG$ aggregates neighbor messages, and $UPD$ updates the node state. The defense also uses thresholds such as $\tau_c$ for cosine similarity, $\tau_J$ for topic Jaccard similarity, and $\tau_d$ for degree anomaly.
+
+\subsection{Step 1: Cosine Similarity}
+For each edge $(u,v)$, node feature similarity is computed as:
+
+$$
+\cos(x_u,x_v)=\frac{x_u^Tx_v}{||x_u||_2||x_v||_2}
+$$
+
+Cosine similarity measures whether two connected nodes have similar feature direction. In Cora, it checks whether connected papers use similar word features. In Elliptic, it checks whether connected transactions have similar feature behavior.
+
+A low cosine value means the connected nodes are feature-wise unrelated. However, cosine alone is not sufficient, because two nodes can have moderate feature similarity while being semantically or topologically abnormal. That is why STRUC-GUARD+ adds ontology and topology checks.
+
+\subsection{Step 2: Semantic Topic Set Construction}
+For each node $u$, a topic set $T_u$ is constructed.
+
+For Cora, the features are binary bag-of-words vectors:
+
+$$
+T_u=\{i\mid x_{ui}>0\}
+$$
+
+For Elliptic, the features are continuous transaction features. Therefore, the topic set is based on the most statistically significant dimensions:
+
+$$
+T_u=\text{Top-}k\left(\left|\frac{x_{ui}-\mu_i}{\sigma_i}\right|\right)
+$$
+
+This converts continuous transaction behavior into a compact semantic signature.
+
+\subsection{Step 3: Jaccard Ontology Similarity}
+The semantic overlap between two nodes is measured using Jaccard similarity:
+
+$$
+J(u,v)=\frac{|T_u\cap T_v|}{|T_u\cup T_v|}
+$$
+
+The value ranges from 0 to 1. If $J(u,v)=1$, the nodes share the same topic set. If $J(u,v)=0$, they share no semantic topics.
+
+The project uses the suspicious-edge rule:
+
+$$
+J(u,v)<0.15
+$$
+
+This means if two connected nodes have less than 15\% topic overlap, the edge is considered semantically suspicious.
+
+\subsection{Step 4: Suspicious Edge Flagging}
+An edge is flagged as suspicious if:
+
+$$
+J(u,v)<\tau_J
+$$
+
+or if topic mismatch occurs together with low cosine similarity:
+
+$$
+topic\_mismatch(u,v)=True \quad \text{and} \quad \cos(x_u,x_v)<\tau_c
+$$
+
+This is the ontology-driven self-healing part. It does not depend only on labels. It checks whether connected nodes make semantic sense based on their feature topics.
+
+\subsection{Step 5: Edge Betweenness Centrality}
+Edge betweenness centrality is computed as:
+
+$$
+B(e)=\sum_{s\neq t}\frac{\sigma_{st}(e)}{\sigma_{st}}
+$$
+
+where $\sigma_{st}$ is the number of shortest paths from node $s$ to node $t$, and $\sigma_{st}(e)$ is the number of those shortest paths that pass through edge $e$.
+
+A high-betweenness edge acts like a bridge between graph communities. Such an edge is important for information flow. An adversary can exploit this by injecting a bridge between unrelated communities. Therefore, STRUC-GUARD+ prunes high-centrality edges when they also have low cosine similarity:
+
+$$
+B(e)\text{ is high and }\cos(x_u,x_v)<0.2
+$$
+
+\subsection{Step 6: Bose-Einstein Fitness Check}
+The project uses a Bose-Einstein-inspired fitness score to measure whether an edge is plausible under semantic and scale-free graph behavior.
+
+The edge-level pruning fitness is:
+
+$$
+\phi_{uv}=0.50\cos(x_u,x_v)+0.30J(u,v)+0.20D_{\text{consistency}}(u,v)
+$$
+
+where:
+
+$$
+D_{\text{consistency}}(u,v)=\frac{1}{1+\frac{|d_v-\mu_d|}{\sigma_d}}
+$$
+
+Here, $d_v$ is the degree of node $v$, $\mu_d$ is the mean degree, and $\sigma_d$ is the standard deviation of degrees.
+
+The graph-level Bose-Einstein fitness metric is:
+
+$$
+\Phi=\frac{1}{|E|}\sum_{(u,v)\in E}\cos(x_u,x_v)\exp\left(-\frac{|\log(1+d_u)-\log(1+d_v)|}{T}\right)
+$$
+
+\subsection{Why Bose-Einstein Fitness Was Used}
+GNNGuard mainly checks local feature similarity. But an adversarial edge can be feature-plausible and still topologically unnatural. For example, an attacker can connect a moderately similar node to a hub to influence many predictions. Cosine similarity alone may not remove this edge.
+
+Bose-Einstein fitness adds a scale-free graph assumption. Real-world graphs often follow skewed degree distributions. Edges should not create unnatural degree growth or implausible hub-outlier relationships. The fitness score therefore combines:
+
+\begin{itemize}
+    \item semantic similarity,
+    \item topic overlap,
+    \item degree consistency,
+    \item scale-free plausibility.
+\end{itemize}
+
+\subsection{What the Bose-Einstein Value Indicates}
+A low Bose-Einstein fitness value means the graph has unnatural semantic-degree relationships. A high value means the graph has more plausible edge growth and better structural integrity.
+
+For example:
+
+\begin{itemize}
+    \item Cora PGD attacked BE fitness = 0.1720.
+    \item Cora PGD defended BE fitness = 0.6840.
+    \item Elliptic PGD attacked BE fitness = 0.1930.
+    \item Elliptic PGD defended BE fitness = 0.6610.
+\end{itemize}
+
+This shows that after defense, the graph becomes much more structurally and semantically consistent.
+
+\subsection{Step 7: Degree-Anomaly Pruning}
+The defense identifies degree-anomalous nodes using:
+
+$$
+z_d(u)=\frac{|d_u-\mu_d|}{\sigma_d}
+$$
+
+If:
+
+$$
+z_d(u)>\tau_d
+$$
+
+then node $u$ has an abnormal degree. The defense ranks its incident edges by $\phi_{uv}$ and prunes the lowest-fitness edges until the degree becomes closer to the graph mean or expected power-law behavior.
+
+\subsection{Step 8: Feature Denoising}
+After pruning suspicious edges, features are smoothed using the pruned graph:
+
+$$
+X_s=\alpha X+(1-\alpha)\hat{A}_{pruned}X
+$$
+
+The parameter $\alpha$ preserves part of the original feature vector. This prevents over-smoothing. If $\alpha=0$, features become pure neighborhood averages. If $\alpha$ is too high, adversarial noise may remain. The residual form balances preservation and denoising.
+
+\subsection{Step 9: Small-World KNN Reconstruction}
+After pruning, some useful edges may be removed. The reconstruction stage proposes nearest-neighbor edges under the smoothed feature matrix $X_s$. A candidate edge $(u,v)$ is added only if:
+
+$$
+C_{local}^{after}(u,v)\geq C_{local}^{before}(u,v)
+$$
+
+and:
+
+$$
+APL_{after}\leq APL_{base}(1+\epsilon)
+$$
+
+where $C_{local}$ is local clustering and $APL$ is average path length. This prevents harmful shortcut edges that artificially connect distant communities.
+
+\subsection{Step 10: Temporal Drift Detection}
+For Elliptic, the defense detects temporal drift. The robust z-score drift is:
+
+$$
+D_t(u)=\sqrt{\frac{1}{d}\sum_j\left(\frac{x_{u,j}^{(t)}-\text{median}(X_{t-1,j})}{1.4826\cdot MAD(X_{t-1,j})}\right)^2}
+$$
+
+If $D_t(u)$ is very high, the node is flagged as a suspicious temporal-drift node. This is important for Bitcoin transactions because illicit behavior may appear as sudden changes across time.
+
+\subsection{Step 11: Adversarial Retraining}
+The final GNN is retrained on the defended graph using adversarial augmentations:
+
+\begin{itemize}
+    \item feature FGSM perturbation,
+    \item edge dropout,
+    \item edge addition augmentation,
+    \item validation-based model selection.
+\end{itemize}
+
+This produces robust parameters $\Theta^*$.
+
+% ==========================================================
+\section{Why Accuracy Can Improve Beyond Baseline}
+% ==========================================================
+
+The baseline model is trained on the original graph without explicit robustness regularization. After defense, the graph and model are not simply restored to the old baseline state. They are improved through cleaning and regularization.
+
+Accuracy can exceed baseline because STRUC-GUARD+ performs:
+
+\begin{enumerate}
+    \item \textbf{Removal of noisy edges:} even clean benchmark graphs can contain weak, noisy, or low-homophily edges.
+    \item \textbf{Feature denoising:} residual smoothing reduces adversarial or naturally noisy feature spikes.
+    \item \textbf{Topology-safe reconstruction:} small-world KNN can restore useful local edges after pruning.
+    \item \textbf{Adversarial retraining:} the defended model learns under perturbation, making it more robust than the ordinary baseline.
+    \item \textbf{Validation-based selection:} the best recovered model is selected using validation accuracy.
+\end{enumerate}
+
+Therefore, when Cora PGD improves from 0.0000 after attack to 0.9210 after defense, the recovery rate becomes 115.0\%. This does not mean that metrics were fabricated. It means the defended graph and retrained model form a cleaned and regularized learning setting that performs better than the initial clean baseline of 0.8010.
+
+Similarly, Elliptic PGD improves from 0.1180 to 0.9340, which exceeds the baseline 0.8750. This happens because temporal/feature noise is reduced, suspicious structure is filtered, and the final model is trained with adversarial robustness.
+
+% ==========================================================
+\section{Metrics: Calculation, Purpose, Threshold, and Interpretation}
+% ==========================================================
+
+\subsection{Accuracy and Attack Drop}
+Accuracy is:
+
+$$
+Accuracy=\frac{\text{correct predictions}}{\text{evaluated nodes}}
+$$
+
+Attack drop is:
+
+$$
+Drop=Acc_{base}-Acc_{attack}
+$$
+
+The attack gate is:
+
+$$
+Drop\geq 0.50Acc_{base}
+$$
+
+For Cora:
+
+$$
+0.50Acc_{base}=0.50\times0.8010=0.4005
+$$
+
+For Elliptic:
+
+$$
+0.50Acc_{base}=0.50\times0.8750=0.4375
+$$
+
+This is the minimum attack damage required to ``break'' the model under the thesis acceptance rule.
+
+\subsection{Recovery Rate}
+Recovery rate is:
+
+$$
+RR=\frac{Acc_{def}-Acc_{attack}}{Acc_{base}-Acc_{attack}}
+$$
+
+If $RR=100\%$, the defense returns exactly to baseline. If $RR>100\%$, the defense exceeds baseline. If $RR<100\%$, the defense improves over attack but does not fully recover.
+
+\subsection{Attack Success Rate}
+ASR is:
+
+$$
+ASR=\frac{|\{u:\hat{y}^{clean}_u=y_u,\hat{y}^{attack}_u\neq y_u\}|}{|\{u:\hat{y}^{clean}_u=y_u\}|}
+$$
+
+It measures the fraction of originally correct nodes that become wrong after attack. Higher ASR means a stronger attack.
+
+\subsection{Embedding Drift}
+Embedding drift is:
+
+$$
+Drift=\frac{1}{|\mathcal{M}|}\sum_{u\in\mathcal{M}}\frac{||z_u^{other}-z_u^{clean}||_2}{\max(||z_u^{clean}||_2,\epsilon)}
+$$
+
+High attacked drift means the attack moved node embeddings far away from the clean representation space. Low defense drift means the defense recovered embeddings close to the clean state.
+
+\subsection{Neighborhood Entropy}
+Neighborhood entropy is:
+
+$$
+H(u)=-\sum_c p_c(N(u))\log_2p_c(N(u))
+$$
+
+High entropy means the neighborhood contains a more chaotic class mixture. It is important because GCNs depend on neighborhood aggregation.
+
+\subsection{Homophily Drop}
+Homophily is:
+
+$$
+h(A,Y)=\frac{|\{(u,v)\in E:y_u=y_v\}|}{|E|}
+$$
+
+Homophily drop is:
+
+$$
+\Delta h=h(A,Y)-h(A',Y)
+$$
+
+High homophily drop means the attack damaged same-class connectivity.
+
+\subsection{Assortativity}
+Assortativity measures degree correlation between connected nodes. More negative assortativity means more hub-outlier distortion. Structural attacks often make assortativity more negative by connecting high-degree nodes to unrelated low-degree nodes.
+
+\subsection{Clean Label Recovery}
+Clean label recovery is:
+
+$$
+CLR=\frac{|\{u:\hat{y}^{clean}_u=y_u,\hat{y}^{attack}_u\neq y_u,\hat{y}^{def}_u=y_u\}|}{|\{u:\hat{y}^{clean}_u=y_u,\hat{y}^{attack}_u\neq y_u\}|}
+$$
+
+It directly measures whether the defense repaired nodes that were originally correct but broken by the attack.
+
+\subsection{Injected Edge Pruning}
+Injected-edge pruning is:
+
+$$
+PruneRate=\frac{|E_{inj}\setminus E^*|}{|E_{inj}|}
+$$
+
+The project threshold is:
+
+$$
+PruneRate\geq 90\%
+$$
+
+This proves the defense is not only retraining around the attack but actually removing adversarial structure.
+
+\subsection{Are There Fixed Break Thresholds for Every Metric?}
+Only some metrics have hard thresholds in the project:
+
+\begin{itemize}
+    \item Attack drop threshold: $\geq50\%$ of baseline.
+    \item Defense threshold: defended accuracy $\geq$ baseline accuracy.
+    \item Injected-edge pruning threshold: $\geq90\%$.
+\end{itemize}
+
+There is no universal fixed break threshold for embedding drift, entropy, homophily drop, Bose-Einstein fitness, or assortativity. These are diagnostic metrics. They are interpreted relative to the clean graph, attacked graph, and defended graph.
+
+% ==========================================================
+\section{Result Interpretation}
+% ==========================================================
+
+\subsection{Cora Results}
+Cora baseline accuracy is 0.8010. Therefore, each accepted attack must reduce accuracy by at least 0.4005.
+
+The strongest attack is Gradient Attack (PGD), which reduces accuracy to 0.0000. After defense, accuracy becomes 0.9210. This gives 115.0\% recovery, meaning the defended model exceeds the original baseline.
+
+Feature Perturbation reduces accuracy to 0.3180 and recovers to 0.8290. This shows that feature smoothing and adversarial retraining successfully repair feature-space corruption.
+
+Structural attacks such as DICE, Metattack, Nettack, Random Structure, and Edge Flip all show large homophily damage and are recovered through ontology-based pruning and topology-aware reconstruction.
+
+\subsection{Elliptic Results}
+Elliptic baseline accuracy is 0.8750. Therefore, each accepted attack must reduce accuracy by at least 0.4375.
+
+Gradient Attack reduces accuracy to 0.1180 and recovers to 0.9340. Temporal Perturbation reduces accuracy to 0.2970 and recovers to 0.9110.
+
+This shows that the defense works not only on static Cora graphs but also on temporal financial transaction graphs. Temporal drift detection is particularly important for Elliptic because transaction behavior changes across 49 timesteps.
+
+\subsection{Why Structural Attacks Show Homophily Drop}
+Structural attacks modify edges. They delete same-class edges and add cross-class or low-similarity edges. Therefore, the graph becomes less homophilous:
+
+$$
+\Delta h=h(A,Y)-h(A',Y)
+$$
+
+DICE and Metattack show strong homophily drop because their goal is to corrupt topology.
+
+\subsection{Why Feature Attacks Show High Embedding Drift}
+Feature attacks directly modify $X$ in:
+
+$$
+H^{(1)}=\sigma(\hat{A}XW^{(0)})
+$$
+
+Even if $A$ is unchanged, corrupted features pass through the first GCN layer and change the hidden embedding. That is why PGD and Feature Perturbation produce high embedding drift.
+
+% ==========================================================
+\section{Comprehensive Viva Question Bank with Model Answers}
+% ==========================================================
+
+\subsection{Dataset Questions}
+\begin{enumerate}[label=\textbf{Q\arabic*.}]
+    \item \textbf{What are the two datasets used in this project?}\\
+    \textbf{Answer:} The project uses Cora and Elliptic Bitcoin. Cora is a static citation graph with 2708 paper nodes, 5278 citation edges, 1433 binary features, and 7 classes. Elliptic is a temporal Bitcoin transaction graph with 49 timesteps, 165 continuous features, and labels 0 for licit, 1 for illicit, and -1 for unknown.
+
+    \item \textbf{What does a node represent in Cora?}\\
+    \textbf{Answer:} A node represents a research paper. Its feature vector is a 1433-dimensional binary bag-of-words vector.
+
+    \item \textbf{What does an edge represent in Cora?}\\
+    \textbf{Answer:} An edge represents a citation relationship between two papers. It is treated as undirected for GCN message passing.
+
+    \item \textbf{What does a node represent in Elliptic?}\\
+    \textbf{Answer:} A node represents a Bitcoin transaction with 165 continuous features.
+
+    \item \textbf{Why is Elliptic harder than Cora?}\\
+    \textbf{Answer:} Elliptic is temporal, partially labeled, imbalanced, and security-sensitive. Many nodes have unknown labels, and illicit transactions are a minority class.
+
+    \item \textbf{Why use both datasets?}\\
+    \textbf{Answer:} Cora validates the method on a standard citation graph, while Elliptic validates it on a temporal financial fraud graph.
+\end{enumerate}
+
+\subsection{GCN Questions}
+\begin{enumerate}[label=\textbf{Q\arabic*.},resume]
+    \item \textbf{What is the main GCN equation?}\\
+    \textbf{Answer:}
+    $$
+    H^{(l+1)}=\sigma(\hat{A}H^{(l)}W^{(l)})
+    $$
+    It updates node embeddings by aggregating normalized neighbor information.
+
+    \item \textbf{Why is adjacency normalization used?}\\
+    \textbf{Answer:} Normalization prevents high-degree nodes from dominating aggregation:
+    $$
+    \hat{A}=\tilde{D}^{-\frac{1}{2}}\tilde{A}\tilde{D}^{-\frac{1}{2}}
+    $$
+
+    \item \textbf{Why are GCNs vulnerable to attacks?}\\
+    \textbf{Answer:} Because both topology and features directly influence message passing. If $A$ or $X$ is perturbed, the hidden representation changes.
+
+    \item \textbf{What is message passing?}\\
+    \textbf{Answer:} It is the process where each node receives and aggregates information from its neighbors.
+\end{enumerate}
+
+\subsection{Attack Questions}
+\begin{enumerate}[label=\textbf{Q\arabic*.},resume]
+    \item \textbf{What is the difference between poisoning and evasion attacks?}\\
+    \textbf{Answer:} Poisoning attacks modify training data and require retraining. Evasion attacks modify test-time graph or features without retraining the model.
+
+    \item \textbf{Which attacks are poisoning attacks?}\\
+    \textbf{Answer:} Nettack, DICE, Meta Attack, and Random Structure.
+
+    \item \textbf{Which attacks are evasion attacks?}\\
+    \textbf{Answer:} Feature Perturbation, Edge Flip, Gradient Attack (PGD), and Temporal Perturbation.
+
+    \item \textbf{Why is PGD the strongest attack?}\\
+    \textbf{Answer:} PGD uses the gradient of loss with respect to features, so it moves features in the direction that maximally increases classification loss:
+    $$
+    X_{t+1}=\Pi(X_t+\alpha sign(\nabla_X\mathcal{L}))
+    $$
+
+    \item \textbf{Why does Feature Perturbation cause high embedding drift?}\\
+    \textbf{Answer:} Because the first GCN layer directly depends on $X$. Changing features changes embeddings even if the graph structure is unchanged.
+
+    \item \textbf{Why does DICE affect homophily?}\\
+    \textbf{Answer:} DICE deletes same-class edges and adds different-class edges, directly reducing edge-label homophily.
+
+    \item \textbf{What is Metattack?}\\
+    \textbf{Answer:} Metattack is a bilevel poisoning attack that selects graph perturbations while considering how the model retrains.
+
+    \item \textbf{What is Temporal Perturbation?}\\
+    \textbf{Answer:} It is an Elliptic-specific attack that disrupts transaction feature consistency across timesteps.
+\end{enumerate}
+
+\subsection{Defense Questions}
+\begin{enumerate}[label=\textbf{Q\arabic*.},resume]
+    \item \textbf{How does STRUC-GUARD+ know whether a graph is attacked?}\\
+    \textbf{Answer:} It does not use a direct attacked/clean label. It detects suspicious structures using semantic, feature, topology, degree, and temporal anomaly signals.
+
+    \item \textbf{Why use Jaccard similarity?}\\
+    \textbf{Answer:} Jaccard checks explicit topic overlap. It is stronger than only cosine because two vectors can have moderate cosine but no meaningful shared topic set.
+
+    \item \textbf{Why use cosine similarity?}\\
+    \textbf{Answer:} Cosine measures local feature agreement between connected nodes.
+
+    \item \textbf{Why use edge betweenness?}\\
+    \textbf{Answer:} High-betweenness edges act as bridges. If such an edge also has low similarity, it is likely an adversarial shortcut.
+
+    \item \textbf{Why use Bose-Einstein fitness?}\\
+    \textbf{Answer:} It detects unnatural semantic-degree relationships missed by local similarity filters.
+
+    \item \textbf{What does a high BE fitness mean?}\\
+    \textbf{Answer:} It means the graph has more natural semantic and degree consistency.
+
+    \item \textbf{What does a low BE fitness mean?}\\
+    \textbf{Answer:} It suggests unnatural edge formation, possible adversarial growth, or poor topology-feature consistency.
+
+    \item \textbf{How does the defense avoid deleting important edges?}\\
+    \textbf{Answer:} It uses multi-condition pruning and safeguards such as minimum edge retention, connectivity restoration, and safe KNN reconstruction.
+
+    \item \textbf{What is small-world KNN reconstruction?}\\
+    \textbf{Answer:} It adds feature-similar edges only if they improve local clustering and preserve average path length.
+
+    \item \textbf{Why is temporal drift detection needed?}\\
+    \textbf{Answer:} Elliptic is temporal. A transaction can look normal in one snapshot but abnormal relative to previous snapshot behavior.
+
+    \item \textbf{What is feature smoothing?}\\
+    \textbf{Answer:} It denoises features using trusted neighbors:
+    $$
+    X_s=\alpha X+(1-\alpha)\hat{A}_{pruned}X
+    $$
+
+    \item \textbf{Why adversarial retraining?}\\
+    \textbf{Answer:} It trains the model to remain stable under future feature and edge perturbations.
+\end{enumerate}
+
+\subsection{Metric and Result Questions}
+\begin{enumerate}[label=\textbf{Q\arabic*.},resume]
+    \item \textbf{What is the attack acceptance threshold?}\\
+    \textbf{Answer:} An attack passes only if:
+    $$
+    Acc_{base}-Acc_{attack}\geq0.50Acc_{base}
+    $$
+
+    \item \textbf{What is the Cora attack threshold?}\\
+    \textbf{Answer:} Cora baseline is 0.8010, so the required drop is 0.4005.
+
+    \item \textbf{What is the Elliptic attack threshold?}\\
+    \textbf{Answer:} Elliptic baseline is 0.8750, so the required drop is 0.4375.
+
+    \item \textbf{What does recovery above 100\% mean?}\\
+    \textbf{Answer:} It means defended accuracy exceeds the clean baseline accuracy.
+
+    \item \textbf{Why does the defended accuracy exceed baseline?}\\
+    \textbf{Answer:} Because the defense removes noisy edges, denoises features, reconstructs safe edges, and retrains with adversarial regularization.
+
+    \item \textbf{What is ASR?}\\
+    \textbf{Answer:} ASR is the fraction of originally correct nodes that become wrong after the attack.
+
+    \item \textbf{What is embedding drift?}\\
+    \textbf{Answer:} It measures how far attacked or defended embeddings move from clean embeddings.
+
+    \item \textbf{What is clean label recovery?}\\
+    \textbf{Answer:} It measures how many nodes broken by the attack are restored by the defense.
+
+    \item \textbf{Why is injected-edge pruning important?}\\
+    \textbf{Answer:} It proves the defense removes adversarial structure, not just retrains around it.
+
+    \item \textbf{What does Cora PGD result show?}\\
+    \textbf{Answer:} PGD drops Cora accuracy from 0.8010 to 0.0000, and defense recovers it to 0.9210.
+
+    \item \textbf{What does Elliptic PGD result show?}\\
+    \textbf{Answer:} PGD drops Elliptic accuracy from 0.8750 to 0.1180, and defense recovers it to 0.9340.
+\end{enumerate}
+
+\subsection{Comparison and Critical Questions}
+\begin{enumerate}[label=\textbf{Q\arabic*.},resume]
+    \item \textbf{How is STRUC-GUARD+ better than GNNGuard?}\\
+    \textbf{Answer:} GNNGuard mainly uses local feature similarity. STRUC-GUARD+ adds ontology, edge betweenness, degree consistency, power-law behavior, small-world reconstruction, temporal drift detection, and adversarial retraining.
+
+    \item \textbf{Does the defense use test labels?}\\
+    \textbf{Answer:} No. Test labels are used only for final evaluation. Defense decisions are based on features, topology, temporal statistics, and train/validation selection.
+
+    \item \textbf{Could STRUC-GUARD+ over-prune?}\\
+    \textbf{Answer:} It could if thresholds are too aggressive, but the implementation reduces this risk using minimum edge retention, connectivity restoration, and safe reconstruction.
+
+    \item \textbf{What is the main limitation?}\\
+    \textbf{Answer:} NetworkX centrality calculations can be expensive for very large graphs. Future work should use approximate scalable centrality.
+
+    \item \textbf{Can this work in real financial systems?}\\
+    \textbf{Answer:} Yes, the Elliptic experiment shows relevance to transaction fraud detection. Temporal drift and suspicious edge detection can help identify laundering-like behavior.
+
+    \item \textbf{What is the main novelty?}\\
+    \textbf{Answer:} The main novelty is combining ontology-driven semantic reasoning with scale-free topological integrity and adversarial self-healing.
+
+    \item \textbf{What happens if clean data is passed through the defense?}\\
+    \textbf{Answer:} Most normal edges should be preserved because they do not satisfy suspicious conditions. Some noisy edges may be pruned, which can even improve accuracy.
+
+    \item \textbf{Why is no universal threshold given for drift or entropy?}\\
+    \textbf{Answer:} These metrics depend on dataset scale, embedding dimension, class count, and graph density. They are interpreted comparatively across clean, attacked, and defended states.
+
+    \item \textbf{Why does the project use both accuracy and graph metrics?}\\
+    \textbf{Answer:} Accuracy shows prediction performance, but graph metrics explain why the attack or defense worked structurally and semantically.
+
+    \item \textbf{What future improvements are possible?}\\
+    \textbf{Answer:} Heterogeneous graph support, streaming temporal defense, learned ontology rules, scalable centrality, and certified robustness bounds.
+\end{enumerate}
+
+\end{document}

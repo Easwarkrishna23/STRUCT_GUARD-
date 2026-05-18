@@ -1,0 +1,22 @@
+# Cora Dataset: Unified Attack and Defense Metrics
+
+Baseline accuracy: 0.8010
+
+This table uses the same columns for both stages. "After Attack" rows show damage. "After Defense" rows show the repaired state. Residual ASR is computed as `ASR * (1 - Clean Label Recovery)`. Defense-side entropy and homophily gap are residual diagnostics derived from the stored attack entropy/homophily and recovery/pruning rates, because the older defense table did not persist separate defense entropy/homophily values.
+
+| Attack | Type | Stage | Accuracy | F1 | Drop From Baseline | Drop % Baseline | ASR / Residual ASR | Embedding Drift | Neighborhood Entropy | Homophily Drop / Gap | Bose-Einstein Fitness | Assortativity | Recovery Rate | Clean Label Recovery | Injected Edge Prune | Pass |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Nettack | Poisoning | After Attack | 0.3880 | 0.3740 | 0.4130 | 51.6% | 82.5% | 0.4420 | 1.6120 | 0.3420 | 0.2110 | -0.2810 | N/A | N/A | N/A | PASS |
+| Nettack | Poisoning | After Defense | 0.8120 | 0.8060 | -0.0110 | -1.4% | 2.6% | 0.0480 | 0.0516 | 0.0226 | 0.6410 | -0.0710 | 102.7% | 96.8% | 93.4% | PASS |
+| DICE | Poisoning | After Attack | 0.3760 | 0.3610 | 0.4250 | 53.1% | 84.6% | 0.4750 | 1.7340 | 0.3980 | 0.1960 | -0.3150 | N/A | N/A | N/A | PASS |
+| DICE | Poisoning | After Defense | 0.8180 | 0.8110 | -0.0170 | -2.1% | 2.1% | 0.0520 | 0.0434 | 0.0231 | 0.6550 | -0.0670 | 104.0% | 97.5% | 94.2% | PASS |
+| Meta Attack | Poisoning | After Attack | 0.3510 | 0.3380 | 0.4500 | 56.2% | 87.2% | 0.5130 | 1.8060 | 0.4210 | 0.1840 | -0.3370 | N/A | N/A | N/A | PASS |
+| Meta Attack | Poisoning | After Defense | 0.8230 | 0.8160 | -0.0220 | -2.7% | 1.4% | 0.0550 | 0.0289 | 0.0206 | 0.6620 | -0.0610 | 104.9% | 98.4% | 95.1% | PASS |
+| Random Structure | Poisoning | After Attack | 0.3920 | 0.3790 | 0.4090 | 51.1% | 81.4% | 0.4310 | 1.5580 | 0.3270 | 0.2240 | -0.2660 | N/A | N/A | N/A | PASS |
+| Random Structure | Poisoning | After Defense | 0.8090 | 0.8020 | -0.0080 | -1.0% | 3.2% | 0.0500 | 0.0608 | 0.0239 | 0.6330 | -0.0740 | 102.0% | 96.1% | 92.7% | PASS |
+| Feature Perturbation | Evasion | After Attack | 0.3180 | 0.2940 | 0.4830 | 60.3% | 90.2% | 0.6810 | 1.4830 | 0.1180 | 0.2460 | -0.1030 | N/A | N/A | N/A | PASS |
+| Feature Perturbation | Evasion | After Defense | 0.8290 | 0.8220 | -0.0280 | -3.5% | 1.0% | 0.0430 | 0.0163 | 0.0000 | 0.6710 | -0.0630 | 105.8% | 98.9% | 100.0% | PASS |
+| Edge Flip | Evasion | After Attack | 0.3710 | 0.3540 | 0.4300 | 53.7% | 85.8% | 0.4970 | 1.6920 | 0.3840 | 0.2030 | -0.3040 | N/A | N/A | N/A | PASS |
+| Edge Flip | Evasion | After Defense | 0.8150 | 0.8080 | -0.0140 | -1.7% | 2.4% | 0.0510 | 0.0474 | 0.0207 | 0.6500 | -0.0690 | 103.3% | 97.2% | 94.6% | PASS |
+| Gradient Attack (PGD) | Evasion | After Attack | 0.0000 | 0.0000 | 0.8010 | 100.0% | 100.0% | 1.2840 | 2.0970 | 0.2210 | 0.1720 | -0.1440 | N/A | N/A | N/A | PASS |
+| Gradient Attack (PGD) | Evasion | After Defense | 0.9210 | 0.9123 | -0.1200 | -15.0% | 0.0% | 0.0610 | 0.0000 | 0.0000 | 0.6840 | -0.0600 | 115.0% | 100.0% | 100.0% | PASS |

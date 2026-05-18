@@ -1,0 +1,80 @@
+\documentclass{beamer}
+\usepackage{amsmath}
+\usepackage{tcolorbox}
+\usepackage{multicol}
+\usepackage{beamerthemeshadow}
+\setbeamertemplate{footline}[frame number]
+
+\title{Proposed System: STRUC-GUARD+}
+\author{Study of Adversarial Attacks and Defence Mechanisms on Graph Neural Network Architecture}
+\date{May, 2026}
+
+\begin{document}
+
+\section{Proposed System}
+
+\begin{frame}{Proposed System: Objectives and Goals}
+\small
+\begin{itemize}
+    \item \textbf{Primary Objective:} Design a robust GNN attack-defense framework that exposes the weakness of standard GCN message passing under strong adversarial perturbations and restores post-defense performance to baseline or above.
+    \item \textbf{Attack Goal:} Ensure every evaluated attack produces a significant performance degradation:
+    \[
+        Acc_{base}-Acc_{attack} \geq 0.50 \times Acc_{base}
+    \]
+    using realistic graph and feature perturbations only.
+    \item \textbf{Defense Goal:} Recover the attacked model using STRUC-GUARD+:
+    \[
+        Acc_{defended} \geq Acc_{base}
+    \]
+    while pruning at least 90\% of injected adversarial edges wherever injected-edge tracking is available.
+    \item \textbf{Evaluation Goal:} Go beyond accuracy by measuring ASR, Embedding Drift, Neighborhood Entropy, Homophily Drop, Bose-Einstein Fitness, Assortativity, Clean Label Recovery, and Injected Edge Pruning.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Proposed System Architecture}
+\small
+\begin{tcolorbox}[colback=gray!8,colframe=black,title=End-to-End Pipeline]
+\[
+\text{Dataset} \rightarrow \text{Baseline GCN} \rightarrow \text{Strong Attack}
+\rightarrow \text{STRUC-GUARD+ Defense} \rightarrow \text{Robust Evaluation}
+\]
+\end{tcolorbox}
+
+\begin{itemize}
+    \item \textbf{Input Datasets:}
+    \begin{itemize}
+        \item \textbf{Cora:} static citation graph, binary bag-of-words node features, 7 paper classes.
+        \item \textbf{Elliptic:} dynamic Bitcoin transaction graph, continuous transaction features, 49 temporal snapshots.
+    \end{itemize}
+    \item \textbf{Attack Layer:} Nettack, DICE, Meta Attack, Random Structure, Feature Perturbation, Edge Flip, PGD, and Temporal Perturbation.
+    \item \textbf{Calibration:} Attack budgets are increased only on validation data until the required degradation gate is reached.
+    \item \textbf{Defense Layer:} Semantic suspicious-edge detection, topology-aware pruning, feature denoising, small-world KNN reconstruction, and adversarial retraining.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{STRUC-GUARD+ Defense Workflow}
+\small
+\begin{enumerate}
+    \item \textbf{Ontology Topic Set Generation:}
+    \[
+        T_u =
+        \begin{cases}
+        \{i \mid x_{ui}>0\}, & \text{Cora binary features}\\
+        \text{Top-k absolute z-score features}, & \text{Elliptic continuous features}
+        \end{cases}
+    \]
+    \item \textbf{Suspicious Edge Detection:}
+    \[
+        J(u,v)=\frac{|T_u \cap T_v|}{|T_u \cup T_v|}, \qquad
+        J(u,v)<0.15
+    \]
+    or topic mismatch with low cosine similarity.
+    \item \textbf{Topological Integrity Filtering:} Remove high-betweenness, low-trust bridge edges and prune lowest-fitness edges from degree-anomalous nodes:
+    \[
+        \phi_{uv}=0.50\cos(x_u,x_v)+0.30J(u,v)+0.20D_{consistency}(u,v)
+    \]
+    \item \textbf{Self-Healing Recovery:} Apply residual feature denoising, accept KNN reconstruction only if clustering improves and average path length remains stable, then adversarially retrain the GCN.
+\end{enumerate}
+\end{frame}
+
+\end{document}
